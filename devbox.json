@@ -5,7 +5,7 @@
     "cargo@1.99.0",
     "clippy@1.99.0",
     "rustfmt@1.99.0",
-    "gcc@latest",
+    "gcc@4.9.4",
     "protobuf@36.2",
     "openbao@2.7.2",
     "grpcurl@1.9.4",
