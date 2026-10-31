@@ -1,0 +1,77 @@
+package:
+  name: talos-nyckelpiga
+  # Must equal Cargo.toml's version (hack/check-version.sh, run by CI).
+  version: "0.1.0"
+  epoch: 0
+  description: "Talos Linux KMS server backed by OpenBao transit"
+  copyright:
+    # This repo's code, plus the vendored sidero.kms proto compiled into it.
+    # Rust crate licenses: see the notices attestation (hack/notices.py).
+    - license: Apache-2.0
+    - license: MPL-2.0
+      paths:
+        - proto/kms.proto
+
+# Build environment: Alpine, not Wolfi. Wolfi is glibc-only and has no musl
+# Rust target; Alpine's rust targets musl natively, and +crt-static gives a
+# fully static binary with no LGPL (glibc) code in it. Only the build runs
+# here: the runtime image is Wolfi (apko.yaml). See the wiki decision
+# static-musl-alpine-build.
+environment:
+  contents:
+    repositories:
+      - https://dl-cdn.alpinelinux.org/alpine/v3.24/main
+      - https://dl-cdn.alpinelinux.org/alpine/v3.24/community
+    keyring:
+      - https://alpinelinux.org/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub
+    packages:
+      - busybox
+      - build-base
+      - ca-certificates-bundle
+      - cargo
+      - cargo-auditable
+      - protoc
+      - rust
+  environment:
+    # melange mounts --cache-dir here; CI persists it between runs.
+    CARGO_TARGET_DIR: /var/cache/melange/target
+    # Alpine's rust links musl dynamically by default; force static.
+    RUSTFLAGS: "-C target-feature=+crt-static"
+
+# The source is this repository's working tree plus `cargo vendor` output,
+# passed with --source-dir by hack/build.sh (committed files only in CI). The
+# build itself is offline.
+pipeline:
+  - name: Build
+    runs: |
+      set -e
+      # cargo-auditable embeds the crate list (name, version, source) in the
+      # binary, so scanners can see the Rust dependencies.
+      # --target keeps build scripts and proc macros (host) dynamic.
+      target="$(uname -m)-alpine-linux-musl"
+      cargo auditable build --locked --release --target "$target"
+      install -Dm755 "$CARGO_TARGET_DIR/$target/release/talos-nyckelpiga" \
+        "${{targets.destdir}}/usr/bin/talos-nyckelpiga"
+
+test:
+  environment:
+    contents:
+      # Wolfi, like the runtime image (not the Alpine build environment).
+      repositories:
+        - https://packages.wolfi.dev/os
+      keyring:
+        - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+      packages:
+        - binutils # readelf
+        - busybox
+  pipeline:
+    - runs: |
+        set -e
+        talos-nyckelpiga --version | grep -qx "talos-nyckelpiga ${{package.version}}"
+        # Fully static: no ELF interpreter, so the image needs no libc.
+        # (The test environment is Wolfi, so this also proves the binary runs
+        # without Alpine's musl.)
+        if readelf -l /usr/bin/talos-nyckelpiga | grep -q 'Requesting program interpreter'; then
+          echo "binary is dynamically linked" >&2
+          exit 1
+        fi
