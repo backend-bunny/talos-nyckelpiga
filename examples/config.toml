@@ -1,0 +1,36 @@
+# talos-nyckelpiga configuration. Every key can be overridden from the
+# environment: NYCKELPIGA_<TABLE>__<KEY>, e.g. NYCKELPIGA_OPENBAO__ADDRESS.
+
+[server]
+# gRPC over TLS; Talos dials https://kms.example.com:4050.
+listen = "0.0.0.0:4050"
+# A publicly trusted certificate (Talos can't be given a custom CA for the
+# KMS endpoint), e.g. a cert-manager kubernetes.io/tls Secret mounted here.
+tls_cert = "/etc/talos-nyckelpiga/tls/tls.crt"
+tls_key = "/etc/talos-nyckelpiga/tls/tls.key"
+# How often the certificate and allowlist are checked for changes.
+reload_interval_secs = 30
+
+[health]
+# Plain HTTP: /healthz, /readyz (authenticated to OpenBao), /metrics.
+listen = "0.0.0.0:8080"
+
+[openbao]
+address = "https://openbao.openbao.svc:8200"
+# Trust only this CA for OpenBao (omit to use the system bundle).
+ca_cert = "/etc/talos-nyckelpiga/openbao-ca/ca.crt"
+transit_mount = "transit"
+# One transit key per node; {uuid} is the node's lowercase SMBIOS UUID.
+key_template = "talos-kms-{uuid}"
+# Bind each ciphertext to its node UUID (transit associated_data).
+associated_data = true
+request_timeout_secs = 5
+
+[openbao.auth]
+method = "kubernetes"
+mount = "kubernetes"
+role = "talos-nyckelpiga"
+token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+[allowlist]
+path = "/etc/talos-nyckelpiga/allowlist/allowlist.toml"

@@ -1,0 +1,13 @@
+# Nodes allowed to Seal/Unseal. Anything else gets PERMISSION_DENIED without
+# an OpenBao call. Read a node's UUID with:
+#   talosctl -n <node> get systeminformation -o jsonpath='{.spec.uuid}'
+# The file is re-read on change; a file that fails to parse is ignored (the
+# previous list stays active) and logged.
+
+[[node]]
+uuid = "4c4c4544-0042-3510-8051-b4c04f4e3732"
+label = "worker-1"
+
+[[node]]
+uuid = "4c4c4544-0042-3510-8051-b4c04f4e3733"
+label = "worker-2"
