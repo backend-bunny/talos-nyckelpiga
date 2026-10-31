@@ -1,8 +1,10 @@
 name: release
 
 # Pushing a tag vX.Y.Z (equal to Cargo.toml's version) publishes
-# ghcr.io/backend-bunny/talos-nyckelpiga:X.Y.Z and :sha-<short>, then signs
-# and attests the index digest keylessly.
+# ghcr.io/backend-bunny/talos-nyckelpiga:X.Y.Z and :sha-<short>, signs and
+# attests the index digest keylessly, then publishes the Helm chart
+# oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga:X.Y.Z pinned to that
+# digest, also signed.
 on:
   push:
     tags: ["v*"]
@@ -34,6 +36,8 @@ jobs:
         run: hack/check-version.sh "$TAG"
       - name: Rust checks
         run: devbox run -- hack/cargo-check.sh
+      - name: Chart checks
+        run: devbox run -- hack/chart-test.sh
       - name: Build (melange + apko from lockfile)
         run: devbox run -- hack/build.sh
       - name: Test image
@@ -68,9 +72,22 @@ jobs:
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
 
+      - name: Publish and sign the Helm chart
+        id: chart
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$TOKEN" | devbox run -- helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          devbox run -- hack/chart-publish.sh
+          chart_digest=$(cat out/chart-digest)
+          devbox run -- cosign sign --yes "ghcr.io/backend-bunny/charts/talos-nyckelpiga@$chart_digest"
+          echo "digest=$chart_digest" >> "$GITHUB_OUTPUT"
+
       - name: Summary
         env:
           DIGEST: ${{ steps.publish.outputs.digest }}
+          CHART_DIGEST: ${{ steps.chart.outputs.digest }}
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ### talos-nyckelpiga $TAG
@@ -82,4 +99,6 @@ jobs:
             --certificate-identity-regexp '^https://github.com/backend-bunny/talos-nyckelpiga/' \\
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
           \`\`\`
+
+          Chart: \`oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga\` version \`${TAG#v}\` (\`@$CHART_DIGEST\`)
           EOF

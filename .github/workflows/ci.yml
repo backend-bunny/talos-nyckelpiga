@@ -24,6 +24,18 @@ jobs:
       - name: fmt, clippy, unit + OpenBao integration tests
         run: devbox run -- hack/cargo-check.sh
 
+  chart:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-tools
+      - name: helm lint, kubeconform, golden files, config check
+        run: devbox run -- hack/chart-test.sh
+      - name: Package dry run
+        run: IMAGE_DIGEST=sha256:$(printf '%064d' 0) DRY_RUN=1 devbox run -- hack/chart-publish.sh
+
   image:
     runs-on: ubuntu-26.04
     steps:
@@ -48,10 +60,11 @@ jobs:
 
   # Single required check for branch protection.
   ci-ok:
-    needs: [rust, image]
+    needs: [rust, chart, image]
     if: always()
     runs-on: ubuntu-26.04
     steps:
       - run: |
           [[ "${{ needs.rust.result }}" == success ]]
+          [[ "${{ needs.chart.result }}" == success ]]
           [[ "${{ needs.image.result }}" == success ]]
