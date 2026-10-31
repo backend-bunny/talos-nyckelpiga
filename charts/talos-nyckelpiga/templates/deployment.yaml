@@ -1,0 +1,190 @@
+{{- if and .Values.openbao.caCert.configMap .Values.openbao.caCert.secret }}
+{{- fail "openbao.caCert: set configMap or secret, not both" }}
+{{- end }}
+{{- if not (has .Values.podAntiAffinity (list "hard" "soft" "none")) }}
+{{- fail "podAntiAffinity must be hard, soft or none" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nyckelpiga.fullname" . }}
+  labels:
+    {{- include "nyckelpiga.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # A hostPort can't be held twice on one node, so never surge. A new pod
+      # must be ready (logged in to OpenBao) before the next one goes.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "nyckelpiga.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nyckelpiga.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Config changes roll the pods; the allowlist and TLS Secret reload live.
+        checksum/config: {{ include "nyckelpiga.config" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nyckelpiga.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: talos-nyckelpiga
+          image: {{ include "nyckelpiga.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/talos-nyckelpiga/config.toml"]
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.logLevel | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.grpc.port }}
+              protocol: TCP
+              {{- if .Values.grpc.hostPort.enabled }}
+              hostPort: {{ .Values.grpc.hostPort.port }}
+              {{- end }}
+            - name: http
+              containerPort: {{ .Values.health.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 2
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/talos-nyckelpiga/config.toml
+              subPath: config.toml
+              readOnly: true
+            # Directory mounts (no subPath), so Secret/ConfigMap updates reach
+            # the pod and are reloaded.
+            - name: tls
+              mountPath: /etc/talos-nyckelpiga/tls
+              readOnly: true
+            - name: allowlist
+              mountPath: /etc/talos-nyckelpiga/allowlist
+              readOnly: true
+            - name: token
+              mountPath: /var/run/secrets/talos-nyckelpiga/serviceaccount
+              readOnly: true
+            {{- if or .Values.openbao.caCert.configMap .Values.openbao.caCert.secret }}
+            - name: openbao-ca
+              mountPath: /etc/talos-nyckelpiga/openbao-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nyckelpiga.fullname" . }}
+        - name: tls
+          secret:
+            secretName: {{ required "tls.secretName is required (an existing kubernetes.io/tls Secret)" .Values.tls.secretName }}
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        - name: allowlist
+          configMap:
+            name: {{ include "nyckelpiga.allowlistConfigMap" . }}
+            items:
+              - key: allowlist.toml
+                path: allowlist.toml
+        - name: token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: {{ .Values.openbao.auth.tokenExpirationSeconds }}
+                  {{- with .Values.openbao.auth.tokenAudience }}
+                  audience: {{ . }}
+                  {{- end }}
+        {{- with .Values.openbao.caCert }}
+        {{- if .configMap }}
+        - name: openbao-ca
+          configMap:
+            name: {{ .configMap }}
+            items:
+              - key: {{ .key }}
+                path: {{ .key }}
+        {{- else if .secret }}
+        - name: openbao-ca
+          secret:
+            secretName: {{ .secret }}
+            items:
+              - key: {{ .key }}
+                path: {{ .key }}
+        {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.affinity (ne .Values.podAntiAffinity "none") }}
+      affinity:
+        {{- with .Values.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if eq .Values.podAntiAffinity "hard" }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "nyckelpiga.selectorLabels" . | nindent 18 }}
+        {{- else if eq .Values.podAntiAffinity "soft" }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "nyckelpiga.selectorLabels" . | nindent 20 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

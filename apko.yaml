@@ -1,0 +1,40 @@
+# Distroless: a static binary plus CA certificates (for OpenBao over TLS when
+# openbao.ca_cert is unset). No shell, no package manager, no libc.
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+    # melange output; its per-build key is passed with --keyring-append.
+    - "@local ./packages"
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    - talos-nyckelpiga@local
+    - ca-certificates-bundle
+
+# OCI annotations (also written as config labels). apko adds
+# image.source/revision/created; build.sh/publish.sh add image.version.
+annotations:
+  org.opencontainers.image.title: talos-nyckelpiga
+  org.opencontainers.image.description: "Talos Linux KMS server backed by OpenBao transit: per-node, revocable keys for LUKS-encrypted Talos volumes"
+  org.opencontainers.image.licenses: Apache-2.0 AND MPL-2.0
+  org.opencontainers.image.vendor: backend-bunny
+  org.opencontainers.image.url: https://github.com/backend-bunny/talos-nyckelpiga
+  org.opencontainers.image.documentation: https://github.com/backend-bunny/talos-nyckelpiga/blob/main/README.md
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+      homedir: /home/nonroot
+  run-as: 65532
+
+entrypoint:
+  command: /usr/bin/talos-nyckelpiga
+
+# Add aarch64 here (and ARCHS in hack/lib.sh) when a consumer needs it.
+archs:
+  - x86_64

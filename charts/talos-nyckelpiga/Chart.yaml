@@ -1,0 +1,14 @@
+apiVersion: v2
+name: talos-nyckelpiga
+description: Talos Linux KMS server backed by OpenBao transit (per-node, revocable keys for LUKS-encrypted Talos volumes)
+type: application
+# version and appVersion equal Cargo.toml's version (hack/check-version.sh).
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/backend-bunny/talos-nyckelpiga
+sources:
+  - https://github.com/backend-bunny/talos-nyckelpiga
+keywords: [talos, kms, luks, openbao, vault, transit]
+annotations:
+  artifacthub.io/license: Apache-2.0

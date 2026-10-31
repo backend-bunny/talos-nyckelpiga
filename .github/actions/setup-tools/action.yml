@@ -1,0 +1,35 @@
+name: Set up build tools
+description: >-
+  Install the devbox-pinned toolchain (Rust, protoc, openbao, melange, apko,
+  cosign, ...), allow melange's bubblewrap sandbox on ubuntu runners, and
+  restore (and at job end save) the cargo and melange download caches.
+
+runs:
+  using: composite
+  steps:
+    - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+      with:
+        devbox-version: 0.18.4
+        enable-cache: "true"
+
+    # Ubuntu's AppArmor denies unprivileged user namespaces except to
+    # binaries with a profile; nix's bwrap lives in /nix/store and has none.
+    # The runner VM is ephemeral, so lifting the restriction is job-scoped.
+    - name: Allow unprivileged user namespaces (melange bubblewrap)
+      shell: bash
+      run: |
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        devbox run -- bwrap --unshare-user --bind / / true
+
+    # Crates (host cargo cache, also the source of `cargo vendor`), the
+    # debug target dir, and melange's build-environment APKs and release
+    # target dir. PR runs can read main's caches but only write their own.
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+          .cache
+        key: build-${{ hashFiles('Cargo.lock', 'melange.yaml', 'apko.lock.json', 'devbox.lock') }}
+        restore-keys: build-

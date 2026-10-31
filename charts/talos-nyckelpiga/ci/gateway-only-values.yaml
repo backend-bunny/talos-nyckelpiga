@@ -1,0 +1,26 @@
+# Behind a Gateway (TLS passthrough) instead of hostPort; existing allowlist
+# ConfigMap and CA from a Secret; anywhere in the cluster.
+tls:
+  secretName: kms-tls
+openbao:
+  address: https://openbao.example.com
+  auth:
+    role: talos-nyckelpiga
+  caCert:
+    secret: openbao-ca
+allowlist:
+  existingConfigMap: kms-allowlist
+grpc:
+  hostPort:
+    enabled: false
+tlsRoute:
+  enabled: true
+  hostnames: [kms.example.com]
+  parentRefs:
+    - name: internal
+      namespace: gateway
+nodeSelector: {}
+tolerations: []
+replicas: 2
+pdb:
+  enabled: false

@@ -1,0 +1,19 @@
+talos-nyckelpiga {{ .Chart.AppVersion }} ({{ include "nyckelpiga.image" . }})
+
+{{- if .Values.grpc.hostPort.enabled }}
+
+gRPC (TLS) is on hostPort {{ .Values.grpc.hostPort.port }} of every node running a pod
+({{ .Values.replicas }} replicas, {{ .Values.podAntiAffinity }} anti-affinity). Point Talos at it, e.g.
+  kms: { endpoint: https://kms.example.com:{{ .Values.grpc.hostPort.port }} }
+with kms.example.com resolving to those nodes. The namespace must allow
+hostPort: pod-security.kubernetes.io/enforce=privileged.
+{{- end }}
+{{- if .Values.tlsRoute.enabled }}
+
+TLSRoute (passthrough) for {{ join ", " .Values.tlsRoute.hostnames }}.
+{{- end }}
+
+Readiness = logged in to OpenBao:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+Audit log (JSON, target "audit"):
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "nyckelpiga.fullname" . }} | grep '"target":"audit"'

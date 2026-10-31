@@ -1,0 +1,10 @@
+# The required values only.
+tls:
+  secretName: kms-tls
+openbao:
+  address: https://openbao.openbao.svc:8200
+  auth:
+    role: talos-nyckelpiga
+allowlist:
+  nodes:
+    - uuid: 4c4c4544-0042-3510-8051-b4c04f4e3732

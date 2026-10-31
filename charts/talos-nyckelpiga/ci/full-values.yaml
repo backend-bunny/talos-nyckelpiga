@@ -1,0 +1,44 @@
+# Every optional feature on.
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+tls:
+  secretName: kms-tls
+openbao:
+  address: https://openbao.openbao.svc:8200
+  caCert:
+    configMap: openbao-ca
+    key: ca.crt
+  keyTemplate: "node-{uuid}"
+  auth:
+    mount: k8s
+    role: talos-nyckelpiga
+    tokenAudience: openbao
+allowlist:
+  nodes:
+    - uuid: 4C4C4544-0042-3510-8051-B4C04F4E3732
+      label: worker-1
+    - uuid: 4c4c4544-0042-3510-8051-b4c04f4e3733
+      label: 'worker "2"'
+priorityClassName: system-cluster-critical
+tlsRoute:
+  enabled: true
+  hostnames: [kms.example.com]
+  parentRefs:
+    - name: internal
+      namespace: gateway
+      sectionName: tls-passthrough
+serviceMonitor:
+  enabled: true
+  labels:
+    release: prometheus
+networkPolicy:
+  enabled: true
+  healthFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+  openbaoTo:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openbao
+podAntiAffinity: soft

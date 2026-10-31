@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nyckelpiga.fullname" . }}
+  labels:
+    {{- include "nyckelpiga.labels" . | nindent 4 }}
+data:
+  config.toml: |
+    {{- include "nyckelpiga.config" . | nindent 4 }}
+{{- if not .Values.allowlist.existingConfigMap }}
+---
+# Hot-reloaded by the server: no checksum annotation, so editing it doesn't
+# restart the pods.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nyckelpiga.allowlistConfigMap" . }}
+  labels:
+    {{- include "nyckelpiga.labels" . | nindent 4 }}
+data:
+  allowlist.toml: |
+    {{- if not .Values.allowlist.nodes }}
+    {{- fail "allowlist.nodes is empty: list the permitted node UUIDs, or set allowlist.existingConfigMap" }}
+    {{- end }}
+    {{- range .Values.allowlist.nodes }}
+    [[node]]
+    uuid = {{ required "allowlist.nodes[].uuid is required" .uuid | lower | toJson }}
+    {{- with .label }}
+    label = {{ . | toJson }}
+    {{- end }}
+    {{- end }}
+{{- end }}

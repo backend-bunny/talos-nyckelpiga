@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":dependencyDashboard"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Alpine branch of the melange build environment (musl Rust). Both repository lines move together",
+      "managerFilePatterns": ["/^melange\\.yaml$/"],
+      "matchStrings": [
+        "https://dl-cdn\\.alpinelinux\\.org/alpine/v(?<currentValue>\\d+\\.\\d+)/"
+      ],
+      "depNameTemplate": "alpine",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "loose"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Alpine branch bumps change the Rust compiler that builds the release: review by hand",
+      "matchDepNames": ["alpine"],
+      "matchManagers": ["custom.regex"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Rust crates: lockfile refresh weekly, one PR",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["patch", "minor", "lockFileMaintenance"],
+      "groupName": "rust crates"
+    },
+    {
+      "description": "Build toolchain (devbox: rust, melange, apko, cosign, ...) in one PR",
+      "matchManagers": ["devbox"],
+      "groupName": "build toolchain"
+    },
+    {
+      "description": "GitHub Actions digest/version bumps in one PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  }
+}

@@ -1,0 +1,373 @@
+---
+# Source: talos-nyckelpiga/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: talos-nyckelpiga
+      app.kubernetes.io/instance: kms
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: 4050
+          protocol: TCP
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+  egress:
+    - ports:
+        - port: 8200
+          protocol: TCP
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# Source: talos-nyckelpiga/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: talos-nyckelpiga
+      app.kubernetes.io/instance: kms
+
+---
+# Source: talos-nyckelpiga/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+# The pod mounts its own projected token (audience/expiry from values).
+automountServiceAccountToken: false
+
+---
+# Source: talos-nyckelpiga/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.toml: |
+    [server]
+    listen = "0.0.0.0:4050"
+    tls_cert = "/etc/talos-nyckelpiga/tls/tls.crt"
+    tls_key = "/etc/talos-nyckelpiga/tls/tls.key"
+    reload_interval_secs = 30
+    
+    [health]
+    listen = "0.0.0.0:8080"
+    
+    [openbao]
+    address = "https://openbao.openbao.svc:8200"
+    ca_cert = "/etc/talos-nyckelpiga/openbao-ca/ca.crt"
+    transit_mount = "transit"
+    key_template = "node-{uuid}"
+    associated_data = true
+    request_timeout_secs = 5
+    
+    [openbao.auth]
+    method = "kubernetes"
+    mount = "k8s"
+    role = "talos-nyckelpiga"
+    token_path = "/var/run/secrets/talos-nyckelpiga/serviceaccount/token"
+    
+    [allowlist]
+    path = "/etc/talos-nyckelpiga/allowlist/allowlist.toml"
+
+---
+# Source: talos-nyckelpiga/templates/configmap.yaml
+# Hot-reloaded by the server: no checksum annotation, so editing it doesn't
+# restart the pods.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kms-talos-nyckelpiga-allowlist
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  allowlist.toml: |
+    [[node]]
+    uuid = "4c4c4544-0042-3510-8051-b4c04f4e3732"
+    label = "worker-1"
+    [[node]]
+    uuid = "4c4c4544-0042-3510-8051-b4c04f4e3733"
+    label = "worker \"2\""
+
+---
+# Source: talos-nyckelpiga/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+  ports:
+    - name: grpc
+      port: 4050
+      targetPort: grpc
+      protocol: TCP
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# Source: talos-nyckelpiga/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # A hostPort can't be held twice on one node, so never surge. A new pod
+      # must be ready (logged in to OpenBao) before the next one goes.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: talos-nyckelpiga
+      app.kubernetes.io/instance: kms
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: talos-nyckelpiga
+        app.kubernetes.io/instance: kms
+      annotations:
+        # Config changes roll the pods; the allowlist and TLS Secret reload live.
+        checksum/config: fa083b4d90f244dc53fbb8bdf5fc9d3d38eecf38fc2cc24e7d3a17ddfa70f4cc
+    spec:
+      serviceAccountName: kms-talos-nyckelpiga
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-cluster-critical
+      securityContext:
+        fsGroup: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: talos-nyckelpiga
+          image: ghcr.io/backend-bunny/talos-nyckelpiga@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          args: ["--config", "/etc/talos-nyckelpiga/config.toml"]
+          env:
+            - name: RUST_LOG
+              value: "info"
+          ports:
+            - name: grpc
+              containerPort: 4050
+              protocol: TCP
+              hostPort: 4050
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/talos-nyckelpiga/config.toml
+              subPath: config.toml
+              readOnly: true
+            # Directory mounts (no subPath), so Secret/ConfigMap updates reach
+            # the pod and are reloaded.
+            - name: tls
+              mountPath: /etc/talos-nyckelpiga/tls
+              readOnly: true
+            - name: allowlist
+              mountPath: /etc/talos-nyckelpiga/allowlist
+              readOnly: true
+            - name: token
+              mountPath: /var/run/secrets/talos-nyckelpiga/serviceaccount
+              readOnly: true
+            - name: openbao-ca
+              mountPath: /etc/talos-nyckelpiga/openbao-ca
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: kms-talos-nyckelpiga
+        - name: tls
+          secret:
+            secretName: kms-tls
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        - name: allowlist
+          configMap:
+            name: kms-talos-nyckelpiga-allowlist
+            items:
+              - key: allowlist.toml
+                path: allowlist.toml
+        - name: token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+                  audience: openbao
+        - name: openbao-ca
+          configMap:
+            name: openbao-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: talos-nyckelpiga
+                    app.kubernetes.io/instance: kms
+
+---
+# Source: talos-nyckelpiga/templates/servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: talos-nyckelpiga
+      app.kubernetes.io/instance: kms
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+# Source: talos-nyckelpiga/templates/tlsroute.yaml
+# TLS passthrough: the Gateway routes the encrypted stream by SNI; the server
+# terminates TLS with its own certificate.
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: kms-talos-nyckelpiga
+  labels:
+    helm.sh/chart: talos-nyckelpiga-0.1.0
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  parentRefs:
+    - name: internal
+      namespace: gateway
+      sectionName: tls-passthrough
+  hostnames:
+    - kms.example.com
+  rules:
+    - backendRefs:
+        - name: kms-talos-nyckelpiga
+          port: 4050

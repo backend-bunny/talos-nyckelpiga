@@ -1,0 +1,68 @@
+version: "3"
+
+# Same scripts as CI (hack/*), same devbox-pinned tools. Run inside
+# `devbox shell`, or prefix: `devbox run -- task build`.
+
+x-image-preconditions: &image-preconditions
+  - sh: command -v melange && command -v apko && command -v bwrap
+    msg: "melange/apko/bwrap not on PATH: run inside `devbox shell` (or `devbox run -- task ...`)"
+
+tasks:
+  default:
+    silent: true
+    cmd: task --list
+
+  check:
+    desc: "fmt, clippy -D warnings, unit + OpenBao integration tests (as CI)"
+    cmd: hack/cargo-check.sh
+
+  test:
+    desc: Alias for check
+    cmd: hack/cargo-check.sh
+
+  lint:
+    desc: fmt check and clippy only
+    cmds:
+      - cargo fmt --check
+      - cargo clippy --locked --all-targets -- -D warnings
+
+  build:
+    desc: Debug build of the server binary
+    cmd: cargo build --locked
+
+  chart:
+    desc: "Helm chart: lint, kubeconform, golden files, config check, invalid values"
+    cmd: hack/chart-test.sh
+
+  chart:golden:
+    desc: Accept the current chart rendering as the golden files
+    cmd: UPDATE_GOLDEN=1 hack/chart-test.sh
+
+  image:
+    desc: "melange build + test, then apko build from the lock (out/image.tar)"
+    preconditions: *image-preconditions
+    cmd: hack/build.sh
+
+  image:test:
+    desc: Build the image, then smoke-test it in Docker
+    preconditions: *image-preconditions
+    cmds:
+      - hack/build.sh
+      - hack/test.sh
+
+  publish-dry-run:
+    desc: Build + test the image, then print the tags CI would push
+    preconditions: *image-preconditions
+    cmds:
+      - hack/build.sh
+      - hack/test.sh
+      - DRY_RUN=1 hack/publish.sh
+
+  lock:
+    desc: Regenerate apko.lock.json against today's Wolfi index
+    preconditions: *image-preconditions
+    cmd: hack/lock.sh
+
+  clean:
+    desc: Remove build outputs
+    cmd: rm -rf out packages target

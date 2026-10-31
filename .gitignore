@@ -1,0 +1,17 @@
+# Cargo build output (Cargo.lock is committed)
+/target/
+
+# Build outputs (melange APKs, apko image tarballs, SBOMs)
+/packages/
+/out/
+/.cache/
+*.tar
+*.spdx.json
+
+# melange keys are generated per build and must never be committed
+*.rsa
+*.rsa.pub
+/.keys/
+
+# devbox environment state (devbox.json + devbox.lock are committed)
+/.devbox/
