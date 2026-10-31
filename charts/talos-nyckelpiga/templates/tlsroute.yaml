@@ -1,0 +1,32 @@
+{{- if .Values.tlsRoute.enabled }}
+{{- if not .Values.tlsRoute.hostnames }}
+{{- fail "tlsRoute.hostnames is required when tlsRoute.enabled (the certificate's names)" }}
+{{- end }}
+{{- if not .Values.tlsRoute.parentRefs }}
+{{- fail "tlsRoute.parentRefs is required when tlsRoute.enabled (a Gateway listener with TLS passthrough)" }}
+{{- end }}
+# TLS passthrough: the Gateway routes the encrypted stream by SNI; the server
+# terminates TLS with its own certificate.
+apiVersion: {{ .Values.tlsRoute.apiVersion }}
+kind: TLSRoute
+metadata:
+  name: {{ include "nyckelpiga.fullname" . }}
+  labels:
+    {{- include "nyckelpiga.labels" . | nindent 4 }}
+    {{- with .Values.tlsRoute.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.tlsRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- toYaml .Values.tlsRoute.parentRefs | nindent 4 }}
+  hostnames:
+    {{- toYaml .Values.tlsRoute.hostnames | nindent 4 }}
+  rules:
+    - backendRefs:
+        - name: {{ include "nyckelpiga.fullname" . }}
+          port: {{ .Values.grpc.port }}
+{{- end }}

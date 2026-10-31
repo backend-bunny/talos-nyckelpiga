@@ -26,7 +26,9 @@ See [[decisions/melange-apko-devbox]].
 | `test.sh` | Docker: uid 65532, OCI labels, `--version`, no `/bin/sh`, then a real run with a throwaway cert: `/healthz` 200, `/readyz` 503 (no OpenBao), grpcurl `Seal` for an unknown node → `PermissionDenied`, and an audit line |
 | `publish.sh` | `apko publish` with the build lock; resolves the **index** digest into `out/digest` |
 | `lock.sh` | build the APK, `apko lock`, strip `@local` → `apko.lock.json` |
-| `check-version.sh [tag]` | `melange.yaml` version = `Cargo.toml` version (= tag) |
+| `check-version.sh [tag]` | `melange.yaml` version = chart `version` = `appVersion` = `Cargo.toml` version (= tag) |
+| `chart-test.sh` | Helm chart checks, see [[components/helm-chart]] |
+| `chart-publish.sh` | package the chart with `image.digest` = `out/digest`, `helm push` to `oci://ghcr.io/backend-bunny/charts`, write `out/chart-digest` |
 | `lockfile.py` | copied from container-dropshipping: strip/merge/diff |
 | `notices.py` | crates linked into the binary (cargo metadata, normal deps, musl target) with license + notice files → `out/notices.{json,md}` |
 
@@ -74,6 +76,7 @@ code packages or publishes on merge.
 `.github/workflows/ci.yml` (PRs and manual dispatch, `contents: read`):
 
 - `rust`: `hack/cargo-check.sh` (includes the OpenBao integration test).
+- `chart`: `hack/chart-test.sh` and a package dry run.
 - `image`: build, crate-license summary, `hack/test.sh`, publish dry run.
 - `ci-ok`: the single required check.
 
@@ -82,7 +85,9 @@ build, test, then with `packages: write`, `id-token: write` and
 `attestations: write`: `hack/publish.sh` (`PUBLISH_VERSION=1` → tags
 `X.Y.Z` + `sha-<short>`), `cosign sign` on the index digest, `cosign attest`
 of the SPDX SBOM and the notices (`https://github.com/backend-bunny/talos-nyckelpiga/notices/v1`),
-and `actions/attest-build-provenance`.
+and `actions/attest-build-provenance`. Then the chart: `helm registry
+login` with `GITHUB_TOKEN`, `hack/chart-publish.sh`, `cosign sign` on the
+chart digest.
 
 Caches (`setup-tools`): `~/.cargo/registry`, `~/.cargo/git`, `target`, and
 `.cache` (melange APK cache + release target), keyed on `Cargo.lock`,
@@ -90,8 +95,9 @@ Caches (`setup-tools`): `~/.cargo/registry`, `~/.cargo/git`, `target`, and
 
 ## Releasing
 
-1. Bump `version` in `Cargo.toml` and `melange.yaml` (same value), `cargo
-   update -w`, `task lock`, PR, merge.
+1. Bump `version` in `Cargo.toml`, `melange.yaml` and the chart
+   (`version` + `appVersion`), `cargo update -w`, `task lock`,
+   `task chart:golden`, PR, merge.
 2. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. Take the digest from the run summary; consumers pin it.
 
@@ -103,3 +109,8 @@ Caches (`setup-tools`): `~/.cargo/registry`, `~/.cargo/git`, `target`, and
   writes `~/.vault-token`); the test sets one.
 - `hack/test.sh` needs Docker; sandboxed agent sessions usually can't reach
   the socket, but CI can.
+- In the sandboxed agent session `.github/` is read-only: stage workflow
+  changes elsewhere and have the maintainer move them.
+- First chart publish: the GHCR package `charts/talos-nyckelpiga` is
+  created by the release job and may need its visibility set to public by
+  hand (as with the image package).

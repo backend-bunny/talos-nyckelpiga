@@ -1,0 +1,47 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nyckelpiga.fullname" . }}
+  labels:
+    {{- include "nyckelpiga.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nyckelpiga.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - port: {{ .Values.grpc.port }}
+          protocol: TCP
+      {{- with .Values.networkPolicy.grpcFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    - ports:
+        - port: {{ .Values.health.port }}
+          protocol: TCP
+      {{- with .Values.networkPolicy.healthFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  egress:
+    - ports:
+        - port: {{ .Values.networkPolicy.openbaoPort }}
+          protocol: TCP
+      {{- with .Values.networkPolicy.openbaoTo }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if .Values.networkPolicy.dns }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+{{- end }}

@@ -104,6 +104,10 @@ that doesn't match its key, keeps the previous version, logs an error,
 increments `*_reloads_total{result="error"}` and is retried on every tick
 until fixed. A bad allowlist or certificate **at startup** is fatal.
 
+`--check-config` loads the config (with env overrides) and the allowlist
+and exits: used by the chart tests ([[components/helm-chart]]) on every
+rendered config.
+
 ## Zeroization
 
 Wiped on drop: decrypt plaintext (`Zeroizing<Vec<u8>>`), request `data`

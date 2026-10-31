@@ -1,0 +1,167 @@
+# talos-nyckelpiga Helm values. Required: tls.secretName, openbao.address,
+# openbao.auth.role, and allowlist.nodes (or allowlist.existingConfigMap).
+# See the README in this directory.
+
+image:
+  repository: ghcr.io/backend-bunny/talos-nyckelpiga
+  # Defaults to the chart's appVersion.
+  tag: ""
+  # sha256:… — when set, the image is pulled by digest (tag ignored).
+  # Published charts set it to the digest released with them.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# One pod per node (required anti-affinity), so at most one per control plane.
+replicas: 3
+
+tls:
+  # Existing kubernetes.io/tls Secret (tls.crt/tls.key) with a publicly
+  # trusted certificate for the KMS hostname: Talos can't use a custom CA.
+  # Renewals are picked up without a restart.
+  secretName: ""
+
+openbao:
+  # e.g. https://openbao.openbao.svc:8200
+  address: ""
+  # CA bundle trusted *instead of* the system roots (for a private OpenBao CA).
+  # Set one of configMap or secret.
+  caCert:
+    configMap: ""
+    secret: ""
+    key: ca.crt
+  transitMount: transit
+  # One transit key per node; {uuid} is the node's lowercase SMBIOS UUID.
+  keyTemplate: "talos-kms-{uuid}"
+  # Bind sealed blobs to the node UUID (transit associated_data). Changing it
+  # later makes existing blobs undecryptable.
+  associatedData: true
+  requestTimeoutSecs: 5
+  auth:
+    # Kubernetes auth method mount path and role.
+    mount: kubernetes
+    role: ""
+    # Projected service-account token. Set the audience if the OpenBao role
+    # has `audience` configured.
+    tokenAudience: ""
+    tokenExpirationSeconds: 3600
+
+allowlist:
+  # Nodes allowed to Seal/Unseal. Changes are hot-reloaded by the server
+  # (kubelet syncs the ConfigMap in ~1 min), no rollout.
+  #   talosctl -n <node> get systeminformation -o jsonpath='{.spec.uuid}'
+  nodes: []
+  # - uuid: 4c4c4544-0042-3510-8051-b4c04f4e3732
+  #   label: worker-1
+  # Use an existing ConfigMap (key allowlist.toml) instead of nodes.
+  existingConfigMap: ""
+
+# How often the certificate and allowlist files are checked for changes.
+reloadIntervalSecs: 30
+# RUST_LOG filter; audit events are logged at info (ok) / warn (failures).
+logLevel: info
+
+grpc:
+  port: 4050
+  # Expose the gRPC port on each node's IP. Talos dials it directly (e.g. via
+  # machine.network.extraHostEntries). Requires a namespace with Pod Security
+  # `enforce: privileged`: baseline and restricted forbid hostPort.
+  hostPort:
+    enabled: true
+    port: 4050
+
+health:
+  # Plain HTTP: /healthz, /readyz (authenticated to OpenBao), /metrics.
+  port: 8080
+
+service:
+  # ClusterIP Service for the gRPC port (TLSRoute backend) and metrics.
+  annotations: {}
+
+# Gateway API TLSRoute with TLS passthrough: the Gateway routes by SNI and the
+# server still terminates TLS with its own certificate. The audit log's peer
+# is then the gateway's address. Keep the Gateway internal: the KMS protocol
+# has no client authentication.
+tlsRoute:
+  enabled: false
+  apiVersion: gateway.networking.k8s.io/v1
+  # e.g. [kms.example.com] (must match the certificate)
+  hostnames: []
+  # e.g. [{name: internal, namespace: gateway, sectionName: tls-passthrough}]
+  parentRefs: []
+  annotations: {}
+  labels: {}
+
+serviceAccount:
+  create: true
+  # Defaults to the release fullname.
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+# KMS availability gates unsealing volumes at boot.
+priorityClassName: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+# Defaults: run on control planes.
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+# hard: at most one pod per node (required with hostPort); soft: preferred;
+# none: no anti-affinity from the chart.
+podAntiAffinity: hard
+affinity: {}
+topologySpreadConstraints: []
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+networkPolicy:
+  enabled: false
+  # Peers allowed to reach the gRPC port. Empty: anyone (Talos nodes connect
+  # from node IPs; how hostPort traffic meets NetworkPolicy depends on the CNI).
+  grpcFrom: []
+  # Peers allowed to reach the health/metrics port. Empty: anyone (kubelet
+  # probes come from the node and typically bypass policies).
+  healthFrom: []
+  # Egress destinations for OpenBao, e.g.
+  # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: openbao}}}]
+  # Empty: any destination on openbaoPort.
+  openbaoTo: []
+  openbaoPort: 8200
+  # Allow DNS to kube-system.
+  dns: true
+
+extraEnv: []

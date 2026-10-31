@@ -2,6 +2,23 @@
 
 Newest first. Format: `## [YYYY-MM-DD] <kind> | <subject>`.
 
+## [2026-10-31] add | Helm chart
+
+- `charts/talos-nyckelpiga`: Deployment (hostPort, control planes, hard
+  anti-affinity, maxSurge 0), config ConfigMap (checksum roll) + allowlist
+  ConfigMap (hot reload, no roll), existing TLS Secret, projected SA token,
+  optional OpenBao CA, Service, optional TLSRoute (passthrough),
+  ServiceMonitor, NetworkPolicy, PDB, values schema. The brief listed "no
+  Helm chart" as a non-goal; the maintainer asked for one.
+- Server: `--check-config` validates config + allowlist without TLS or
+  OpenBao; used by `hack/chart-test.sh` on every rendered config.
+- Chart tests: lint, kubeconform (Kubernetes 1.37 + Gateway API v1.7
+  TLSRoute v1 + ServiceMonitor schemas, pinned), golden files, invalid
+  values. Release publishes the chart to GHCR (OCI) pinned to the image
+  digest and signs it.
+- Workflows under `.github/` can't be written from the sandboxed agent
+  session; changes were staged in `ci-staging/` and moved by the maintainer.
+
 ## [2026-10-31] add | initial server, image pipeline, wiki
 
 - Server: tonic `sidero.kms` Seal/Unseal → OpenBao transit encrypt/decrypt,

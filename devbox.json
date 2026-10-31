@@ -9,6 +9,8 @@
     "protobuf@36.2",
     "openbao@2.7.2",
     "grpcurl@1.9.4",
+    "kubernetes-helm@4.3.1",
+    "kubeconform@0.8.0",
     "melange@0.59.2",
     "apko@1.2.37",
     "cosign@3.1.3",

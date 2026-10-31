@@ -113,6 +113,10 @@ label = "worker-1"   # optional, shown in logs
 Agent sink) and re-reads it when OpenBao rejects it. It is for tests and
 non-Kubernetes setups.
 
+`talos-nyckelpiga --config <file> --check-config` validates the config
+(including env overrides) and the allowlist it points to, then exits. It
+needs neither the TLS files nor OpenBao.
+
 Logs are JSON on stderr; `RUST_LOG` sets the level (default `info`).
 
 ### Failure behaviour
@@ -129,6 +133,15 @@ operators:
 | node not in the allowlist; OpenBao policy denies the key | `PERMISSION_DENIED` |
 | node's transit key deleted (revoked) | `NOT_FOUND` |
 | OpenBao sealed, unreachable, timing out, rate-limiting, 5xx; no token yet | `UNAVAILABLE` |
+
+## Kubernetes (Helm)
+
+`oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga`, released with each
+image and defaulting to that image's digest. It covers hostPort on the
+control planes (the default) or a Gateway API TLSRoute with passthrough, an
+existing TLS Secret, a projected service-account token for OpenBao, the
+allowlist as a hot-reloaded ConfigMap, a PDB, and an optional ServiceMonitor
+and NetworkPolicy. See [`charts/talos-nyckelpiga/README.md`](charts/talos-nyckelpiga/README.md).
 
 ## Image
 
@@ -159,13 +172,14 @@ direnv with the committed `.envrc`).
 
 ```sh
 task check          # fmt, clippy -D warnings, unit + OpenBao integration tests
+task chart          # helm lint, kubeconform, golden files, config check
 task image:test     # melange + apko build, then a Docker smoke test
 task lock           # regenerate apko.lock.json
 ```
 
 The integration tests start a real `bao server -dev`. Releases: bump
-`version` in `Cargo.toml` and `melange.yaml`, merge, then push tag
-`vX.Y.Z`.
+`version` in `Cargo.toml`, `melange.yaml` and the chart's `version` and
+`appVersion`, merge, then push tag `vX.Y.Z`.
 
 ## License
 

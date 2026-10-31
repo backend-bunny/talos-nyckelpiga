@@ -30,6 +30,14 @@ tasks:
     desc: Debug build of the server binary
     cmd: cargo build --locked
 
+  chart:
+    desc: "Helm chart: lint, kubeconform, golden files, config check, invalid values"
+    cmd: hack/chart-test.sh
+
+  chart:golden:
+    desc: Accept the current chart rendering as the golden files
+    cmd: UPDATE_GOLDEN=1 hack/chart-test.sh
+
   image:
     desc: "melange build + test, then apko build from the lock (out/image.tar)"
     preconditions: *image-preconditions

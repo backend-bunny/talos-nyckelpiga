@@ -53,8 +53,14 @@ Build rules (as in container-dropshipping):
   `.agents/wiki/components/build-pipeline.md`.
 - **Pin everything.** Actions by full SHA with a version comment, toolchain
   in `devbox.json` + `devbox.lock`, crates in `Cargo.lock`.
-- **Versions agree.** `Cargo.toml` and `melange.yaml` versions match, and a
-  release tag is `v<version>` (`hack/check-version.sh`).
+- **Versions agree.** `Cargo.toml`, `melange.yaml` and the chart's
+  `version`/`appVersion` match, and a release tag is `v<version>`
+  (`hack/check-version.sh`).
+- **Chart renders are reviewed.** Any template or values change updates the
+  golden files (`task chart:golden`) in the same PR. The rendered config must
+  pass the server's `--check-config` (`hack/chart-test.sh`). Never put TLS
+  keys, tokens or OpenBao credentials into chart values: the chart only
+  references existing Secrets.
 - **x86_64 only** for now. Adding aarch64: `ARCHS` in `hack/lib.sh` and
   `archs` in `apko.yaml`.
 - **Never push to `main` directly.** Branch, PR, `ci-ok` green.
@@ -66,6 +72,7 @@ src/                # server: config, allowlist, bao (OpenBao client), service (
 proto/kms.proto     # vendored sidero.kms protocol (MPL-2.0, byte-for-byte upstream below the header)
 build.rs            # tonic-prost-build codegen (protoc from devbox / the build environment)
 tests/integration.rs# against a real `bao server -dev`, gRPC over TLS
+charts/talos-nyckelpiga/ # Helm chart (ci/ value sets, tests/ golden renders)
 examples/           # config.toml, allowlist.toml, selfsigned.rs (test cert for hack/test.sh)
 melange.yaml        # static binary APK (Alpine musl build env)
 apko.yaml           # distroless Wolfi image
@@ -84,7 +91,10 @@ renovate.json       # Renovate config
 - Image: `ghcr.io/backend-bunny/talos-nyckelpiga`, public on GHCR.
 - Published only from a release tag `vX.Y.Z`. Tags: `X.Y.Z` and immutable
   `sha-<short>`. Consumers pin by **digest**.
-- The index digest is cosign-signed keylessly (GitHub OIDC) and carries the
+- Helm chart: `oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga`,
+  version `X.Y.Z`, published by the same release with `image.digest` set to
+  that release's image digest, and cosign-signed the same way.
+- The image index digest is cosign-signed keylessly (GitHub OIDC) and carries the
   SPDX SBOM, build provenance and the crate license notices
   (`…/talos-nyckelpiga/notices/v1`) as attestations. Verify with
   `cosign verify ghcr.io/backend-bunny/talos-nyckelpiga@<digest> --certificate-identity-regexp '^https://github.com/backend-bunny/talos-nyckelpiga/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`.

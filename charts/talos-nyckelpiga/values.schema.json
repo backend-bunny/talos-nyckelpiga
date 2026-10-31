@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "talos-nyckelpiga values",
+  "type": "object",
+  "required": ["image", "tls", "openbao", "allowlist", "grpc", "health"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^(sha256:[0-9a-f]{64})?$" },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "replicas": { "type": "integer", "minimum": 1 },
+    "tls": {
+      "type": "object",
+      "required": ["secretName"],
+      "properties": { "secretName": { "type": "string" } }
+    },
+    "openbao": {
+      "type": "object",
+      "required": ["address", "auth"],
+      "properties": {
+        "address": { "type": "string", "pattern": "^(https?://.+)?$" },
+        "caCert": {
+          "type": "object",
+          "properties": {
+            "configMap": { "type": "string" },
+            "secret": { "type": "string" },
+            "key": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+          }
+        },
+        "transitMount": { "type": "string", "minLength": 1 },
+        "keyTemplate": { "type": "string", "pattern": "^[A-Za-z0-9._-]*\\{uuid\\}[A-Za-z0-9._-]*$" },
+        "associatedData": { "type": "boolean" },
+        "requestTimeoutSecs": { "type": "integer", "minimum": 1 },
+        "auth": {
+          "type": "object",
+          "required": ["role"],
+          "properties": {
+            "mount": { "type": "string", "minLength": 1 },
+            "role": { "type": "string" },
+            "tokenAudience": { "type": "string" },
+            "tokenExpirationSeconds": { "type": "integer", "minimum": 600 }
+          }
+        }
+      }
+    },
+    "allowlist": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid"],
+            "additionalProperties": false,
+            "properties": {
+              "uuid": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "label": { "type": "string" }
+            }
+          }
+        },
+        "existingConfigMap": { "type": "string" }
+      }
+    },
+    "reloadIntervalSecs": { "type": "integer", "minimum": 1 },
+    "logLevel": { "type": "string" },
+    "grpc": {
+      "type": "object",
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "hostPort": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+    },
+    "tlsRoute": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "apiVersion": { "type": "string", "pattern": "^gateway\\.networking\\.k8s\\.io/" },
+        "hostnames": { "type": "array", "items": { "type": "string" } },
+        "parentRefs": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "podAntiAffinity": { "enum": ["hard", "soft", "none"] },
+    "pdb": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxUnavailable": { "type": ["integer", "string"] }
+      }
+    }
+  }
+}
