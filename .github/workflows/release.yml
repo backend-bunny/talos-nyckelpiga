@@ -1,0 +1,85 @@
+name: release
+
+# Pushing a tag vX.Y.Z (equal to Cargo.toml's version) publishes
+# ghcr.io/backend-bunny/talos-nyckelpiga:X.Y.Z and :sha-<short>, then signs
+# and attests the index digest keylessly.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # keyless cosign + provenance
+      attestations: write # GitHub artifact attestation
+    env:
+      IMAGE: ghcr.io/backend-bunny/talos-nyckelpiga
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-tools
+      - name: Tag matches the version
+        run: hack/check-version.sh "$TAG"
+      - name: Rust checks
+        run: devbox run -- hack/cargo-check.sh
+      - name: Build (melange + apko from lockfile)
+        run: devbox run -- hack/build.sh
+      - name: Test image
+        run: devbox run -- hack/test.sh
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish
+        id: publish
+        run: |
+          PUBLISH_VERSION=1 devbox run -- hack/publish.sh
+          echo "digest=$(cat out/digest)" >> "$GITHUB_OUTPUT"
+
+      - name: Sign and attest (keyless cosign)
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          devbox run -- cosign sign --yes "$IMAGE@$DIGEST"
+          devbox run -- cosign attest --yes --type spdxjson \
+            --predicate out/sbom-x86_64.spdx.json "$IMAGE@$DIGEST"
+          # Licenses and notice files of the Rust crates in the binary.
+          devbox run -- cosign attest --yes \
+            --type https://github.com/backend-bunny/talos-nyckelpiga/notices/v1 \
+            --predicate out/notices.json "$IMAGE@$DIGEST"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.publish.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### talos-nyckelpiga $TAG
+
+          \`$IMAGE@$DIGEST\`
+
+          \`\`\`sh
+          cosign verify $IMAGE@$DIGEST \\
+            --certificate-identity-regexp '^https://github.com/backend-bunny/talos-nyckelpiga/' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+          EOF

@@ -86,7 +86,9 @@ if ! grep -q 'Code: PermissionDenied' <<<"$out"; then
   exit 1
 fi
 # The refusal is audit-logged as JSON.
-docker logs "$name" 2>&1 | grep -q '"target":"audit".*"result":"permission_denied"' \
+# (Field order in the JSON isn't fixed, so match with jq, not grep.)
+docker logs "$name" 2>&1 \
+  | jq -R -s -e '[split("\n")[] | fromjson? | select(.target == "audit" and .result == "permission_denied")] | length > 0' >/dev/null \
   || { docker logs "$name"; echo "FAIL: no audit event" >&2; exit 1; }
 
 echo "PASS: talos-nyckelpiga"
