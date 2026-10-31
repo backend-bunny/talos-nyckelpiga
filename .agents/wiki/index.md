@@ -23,6 +23,7 @@ the top of [log.md](log.md)).
 | [decisions/tls-reload.md](decisions/tls-reload.md) | Reloading rustls cert resolver (polling) instead of exit-and-restart |
 | [decisions/static-musl-alpine-build.md](decisions/static-musl-alpine-build.md) | Static musl via an Alpine melange env (Wolfi has no musl Rust; static glibc = LGPL) |
 | [decisions/kubernetes-exposure.md](decisions/kubernetes-exposure.md) | hostPort on control planes by default; optional Gateway API TLS passthrough; no gateway TLS termination |
+| [decisions/release-please.md](decisions/release-please.md) | release-please PR → merge → tag + GitHub Release + publish in one workflow; Conventional Commits enforced; generic version markers |
 | [decisions/melange-apko-devbox.md](decisions/melange-apko-devbox.md) | Same as container-dropshipping, and what differs |
 | [decisions/licensing.md](decisions/licensing.md) | Apache-2.0 repo, MPL-2.0 proto, crate notices attestation |
 

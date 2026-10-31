@@ -16,6 +16,7 @@ k8s_version=1.37.0
 k8s_schemas=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/e0c72a1bc5f409d1685c0e1323460c8a98cd7459
 crd_schemas=https://raw.githubusercontent.com/datreeio/CRDs-catalog/3eb90d47aba8d61919d4419dd38301536e32a94b
 
+version=$(awk '/^version:/ { print $2; exit }' "$chart/Chart.yaml")
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cargo build --quiet --locked
@@ -53,10 +54,13 @@ for values in "$chart"/ci/*-values.yaml; do
     -schema-location "$crd_schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
     "$tmp/$name.yaml"
 
+  # Golden files hold VERSION instead of the chart version, so release-please
+  # bumps (which don't regenerate them) don't break the comparison.
   golden=$chart/tests/$name.golden.yaml
+  sed "s/${version//./\\.}/VERSION/g" "$tmp/$name.yaml" > "$tmp/$name.normalized.yaml"
   if [[ -n ${UPDATE_GOLDEN:-} ]]; then
-    cp "$tmp/$name.yaml" "$golden"
-  elif ! diff -u "$golden" "$tmp/$name.yaml"; then
+    cp "$tmp/$name.normalized.yaml" "$golden"
+  elif ! diff -u "$golden" "$tmp/$name.normalized.yaml"; then
     echo "FAIL: $name differs from $golden (UPDATE_GOLDEN=1 hack/chart-test.sh to accept)" >&2
     failed=1
   fi

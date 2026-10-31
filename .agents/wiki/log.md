@@ -2,6 +2,20 @@
 
 Newest first. Format: `## [YYYY-MM-DD] <kind> | <subject>`.
 
+## [2026-10-31] change | automated releases with release-please
+
+- Maintainer chose a release-please PR over fully automatic releases or a
+  local prepare script. `release-please.yml` maintains the release PR and,
+  on merge, calls `release.yml` (now `workflow_call` + `workflow_dispatch`,
+  no tag-push trigger) in the same run.
+- Version markers (`# x-release-please-version`) in `melange.yaml` and
+  `Chart.yaml`, so the YAML comments survive (release-please's yaml updater
+  re-serialises files). Manifest starts at 0.0.0, so the first release PR
+  proposes 0.1.0.
+- Chart golden files hold `VERSION`; release bumps no longer touch them.
+- `hack/check-commits.sh` + a `conventional-commits` CI job.
+- First PR (initial server) was squash-merged as #1.
+
 ## [2026-10-31] add | Helm chart
 
 - `charts/talos-nyckelpiga`: Deployment (hostPort, control planes, hard

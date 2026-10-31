@@ -177,9 +177,24 @@ task image:test     # melange + apko build, then a Docker smoke test
 task lock           # regenerate apko.lock.json
 ```
 
-The integration tests start a real `bao server -dev`. Releases: bump
-`version` in `Cargo.toml`, `melange.yaml` and the chart's `version` and
-`appVersion`, merge, then push tag `vX.Y.Z`.
+The integration tests start a real `bao server -dev`.
+
+### Releases
+
+Automated with [release-please](https://github.com/googleapis/release-please).
+PR titles and commit subjects must be
+[Conventional Commits](https://www.conventionalcommits.org/) (CI checks):
+`feat:` bumps the minor version (while < 1.0), `fix:`/`perf:`/`deps:` the
+patch, and `!` marks a breaking change.
+
+1. Every merge to `main` updates one open **`chore: release X.Y.Z`** PR. It
+   carries the next version in `Cargo.toml`/`Cargo.lock`, `melange.yaml` and
+   the chart, plus the `CHANGELOG.md` entry. Don't bump versions by hand.
+2. Merge it when you want to ship. That tags `vX.Y.Z`, creates the GitHub
+   Release, and publishes and signs the image and the chart. The digests and
+   `cosign verify` commands are appended to the release notes.
+3. To pick up newer Wolfi CA certificates, merge a `build: task lock` PR
+   first.
 
 ## License
 
