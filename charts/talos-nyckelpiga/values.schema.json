@@ -98,6 +98,13 @@
         "loadBalancerClass": { "type": "string" },
         "loadBalancerSourceRanges": { "type": "array", "items": { "type": "string" } },
         "externalTrafficPolicy": { "enum": ["Cluster", "Local"] },
+        "ipFamilyPolicy": { "enum": ["", "SingleStack", "PreferDualStack", "RequireDualStack"] },
+        "ipFamilies": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["IPv4", "IPv6"] }
+        },
         "nodePort": {
           "type": "integer",
           "anyOf": [{ "const": 0 }, { "minimum": 30000, "maximum": 32767 }]

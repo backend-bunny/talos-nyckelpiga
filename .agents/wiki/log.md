@@ -2,6 +2,18 @@
 
 Newest first. Format: `## [YYYY-MM-DD] <kind> | <subject>`.
 
+## [2026-11-01] fix | listen dual-stack (IPv4 + IPv6)
+
+- The maintainer found the server only listened on IPv4: the defaults (and
+  the chart's rendered config) were `0.0.0.0`.
+- Defaults are now `[::]`, bound with socket2 (maintainer approved the
+  direct dependency; it was already in the tree via tokio) with
+  `IPV6_V6ONLY=false`; IPv4 fallback when the kernel has no IPv6; IPv4-mapped
+  peers canonicalised in the audit log. Chart renders `[::]`.
+- Chart: `service.ipFamilyPolicy`/`ipFamilies`, since without them the
+  Service is SingleStack in the cluster's primary family, so IPv6 clients
+  couldn't reach it even with a dual-stack listener.
+
 ## [2026-11-01] add | chart: LoadBalancer/NodePort Service, surge rollouts
 
 - `service.type` (ClusterIP/LoadBalancer/NodePort) with annotations,

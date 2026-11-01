@@ -47,13 +47,13 @@ metadata:
 data:
   config.toml: |
     [server]
-    listen = "0.0.0.0:4050"
+    listen = "[::]:4050"
     tls_cert = "/etc/talos-nyckelpiga/tls/tls.crt"
     tls_key = "/etc/talos-nyckelpiga/tls/tls.key"
     reload_interval_secs = 30
     
     [health]
-    listen = "0.0.0.0:8080"
+    listen = "[::]:8080"
     
     [openbao]
     address = "https://openbao.openbao.svc:8200"
@@ -172,7 +172,7 @@ spec:
         app.kubernetes.io/instance: kms
       annotations:
         # Config changes roll the pods; the allowlist and TLS Secret reload live.
-        checksum/config: 0d25bca80ebcb1b15f4b8d9ba85e9c4c0c0e5f41bee739a8791d0430b3ce919a
+        checksum/config: 3bf60253d7ab665e507782f87a7c49e37bb02fd63e0ee370afa5d40942f47947
     spec:
       serviceAccountName: kms-talos-nyckelpiga
       automountServiceAccountToken: false

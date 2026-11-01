@@ -48,13 +48,13 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- /* Server config (TOML). Strings go through toJson: JSON string escaping is valid TOML. */ -}}
 {{- define "nyckelpiga.config" -}}
 [server]
-listen = {{ printf "0.0.0.0:%d" (int .Values.grpc.port) | toJson }}
+listen = {{ printf "[::]:%d" (int .Values.grpc.port) | toJson }}
 tls_cert = "/etc/talos-nyckelpiga/tls/tls.crt"
 tls_key = "/etc/talos-nyckelpiga/tls/tls.key"
 reload_interval_secs = {{ int .Values.reloadIntervalSecs }}
 
 [health]
-listen = {{ printf "0.0.0.0:%d" (int .Values.health.port) | toJson }}
+listen = {{ printf "[::]:%d" (int .Values.health.port) | toJson }}
 
 [openbao]
 address = {{ required "openbao.address is required" .Values.openbao.address | toJson }}

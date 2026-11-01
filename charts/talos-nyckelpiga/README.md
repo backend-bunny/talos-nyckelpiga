@@ -69,6 +69,16 @@ in plaintext.
 
 ## Behaviour
 
+- **IPv4 and IPv6**: the server always listens dual-stack (`[::]`). Whether
+  IPv6 clients reach it depends on the path:
+  - **Service** (LoadBalancer/NodePort/TLSRoute backend): set
+    `service.ipFamilyPolicy: PreferDualStack` (or `RequireDualStack`); by
+    default Kubernetes makes it SingleStack in the cluster's primary family.
+  - **hostPort**: needs the CNI's portmap to handle IPv6.
+  - **Gateway**: its own listener addresses.
+
+  IPv4 clients show up as plain IPv4 in the audit log, not `::ffff:…`.
+
 - **Rollouts**: with hostPort or hard anti-affinity, pods are replaced one
   at a time (`maxSurge: 0`), since a replacement can't start next to the old
   pod. Otherwise a new pod starts first (`maxSurge: 1`, `maxUnavailable: 0`).
@@ -92,7 +102,7 @@ See [`values.yaml`](values.yaml) (every key is commented) and
 [`values.schema.json`](values.schema.json). Main groups: `image`, `tls`,
 `openbao` (address, CA, transit mount, key template, auth), `allowlist`
 (`nodes` or `existingConfigMap` with key `allowlist.toml`), `grpc.hostPort`,
-`service` (type, annotations, `externalTrafficPolicy`, `nodePort`,
+`service` (type, annotations, `externalTrafficPolicy`, `ipFamilyPolicy`/`ipFamilies`, `nodePort`,
 load-balancer class and source ranges), `rollingUpdate`, `tlsRoute`, `serviceMonitor`, `networkPolicy`, `pdb`, scheduling
 (`nodeSelector`, `tolerations`, `podAntiAffinity`, `affinity`,
 `priorityClassName`).

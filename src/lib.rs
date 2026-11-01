@@ -9,6 +9,7 @@ pub mod bao;
 pub mod config;
 pub mod health;
 pub mod metrics;
+pub mod net;
 pub mod service;
 pub mod tls;
 pub mod watch;
@@ -22,7 +23,6 @@ use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Context;
-use tokio::net::TcpListener;
 
 use crate::allowlist::SharedAllowlist;
 use crate::bao::Bao;
@@ -49,13 +49,15 @@ pub async fn run(
     let allowlist = SharedAllowlist::load(&config.allowlist.path)?;
     let bao = Bao::new(config.openbao.clone(), metrics.clone())?;
 
-    let grpc_listener = TcpListener::bind(config.server.listen)
-        .await
+    let grpc_listener = net::bind(config.server.listen)
         .with_context(|| format!("binding {}", config.server.listen))?;
-    let health_listener = TcpListener::bind(config.health.listen)
-        .await
+    let health_listener = net::bind(config.health.listen)
         .with_context(|| format!("binding {}", config.health.listen))?;
-    tracing::info!(grpc = %config.server.listen, health = %config.health.listen, "listening");
+    tracing::info!(
+        grpc = %grpc_listener.local_addr()?,
+        health = %health_listener.local_addr()?,
+        "listening"
+    );
 
     let mut background = tokio::task::JoinSet::new();
     background.spawn(cert.clone().watch(interval, metrics.clone()));

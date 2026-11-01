@@ -115,6 +115,7 @@ must_fail "a nodePort on a ClusterIP Service" "${min[@]}" --set service.nodePort
 must_fail "a nodePort outside 30000-32767" "${min[@]}" --set service.type=NodePort --set service.nodePort=4050
 must_fail "load balancer source ranges without LoadBalancer" "${min[@]}" \
   --set 'service.loadBalancerSourceRanges[0]=10.0.0.0/8'
+must_fail "an unknown IP family" "${min[@]}" --set 'service.ipFamilies[0]=IPv5'
 must_fail "a surge with hostPort" "${min[@]}" --set rollingUpdate.maxSurge=1 --set rollingUpdate.maxUnavailable=0
 
 exit "$failed"

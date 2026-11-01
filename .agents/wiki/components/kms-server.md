@@ -88,6 +88,16 @@ Talos ignores the code and retries every failure every 30 s
 ([[components/talos-kms-client]]), so the codes are for operators, logs and
 metrics. A sealed OpenBao self-heals: covered by the integration test.
 
+## Listeners (`src/net.rs`)
+
+Default `[::]:4050` (gRPC) and `[::]:8080` (health). The unspecified IPv6
+address is bound with socket2 and `IPV6_V6ONLY` cleared explicitly, so it's
+dual-stack regardless of `net.ipv6.bindv6only`. If IPv6 is missing
+(EAFNOSUPPORT with `ipv6.disable=1`, or EADDRNOTAVAIL), it falls back to
+`0.0.0.0` with a warning. Other addresses bind as given. IPv4 peers on the
+dual-stack socket (`::ffff:a.b.c.d`) are canonicalised to plain IPv4 before
+the audit log. Before 0.2.1 the defaults were `0.0.0.0`, which was IPv4 only.
+
 ## TLS (`src/tls.rs`)
 
 Custom accept loop: TCP → rustls handshake (10 s timeout, concurrent) →

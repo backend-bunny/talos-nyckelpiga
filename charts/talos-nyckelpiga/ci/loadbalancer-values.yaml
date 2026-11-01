@@ -20,6 +20,8 @@ service:
     lbipam.cilium.io/ips: 10.0.0.50
   loadBalancerSourceRanges: [10.0.0.0/16]
   externalTrafficPolicy: Local
+  ipFamilyPolicy: PreferDualStack
+  ipFamilies: [IPv6, IPv4]
   nodePort: 30450
 nodeSelector: {}
 tolerations: []

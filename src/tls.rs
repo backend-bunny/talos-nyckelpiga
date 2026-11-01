@@ -210,7 +210,7 @@ pub fn incoming(
     tokio::spawn(async move {
         loop {
             let (tcp, peer) = match listener.accept().await {
-                Ok(c) => c,
+                Ok((tcp, peer)) => (tcp, crate::net::canonical_peer(peer)),
                 Err(err) => {
                     tracing::warn!(error = %err, "accept failed");
                     tokio::time::sleep(Duration::from_millis(100)).await;
