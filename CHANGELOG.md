@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.2.0...v0.2.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* listen on IPv4 and IPv6 (dual-stack) ([#9](https://github.com/backend-bunny/talos-nyckelpiga/issues/9)) ([46d1018](https://github.com/backend-bunny/talos-nyckelpiga/commit/46d1018c5386057dddf7d075b13ac00906dffb35))
+
 ## [0.2.0](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.1.0...v0.2.0) (2026-11-01)
 
 

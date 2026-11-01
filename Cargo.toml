@@ -1,6 +1,6 @@
 [package]
 name = "talos-nyckelpiga"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.96"
 description = "Talos Linux KMS server backed by OpenBao transit: per-node, revocable keys for LUKS-encrypted Talos volumes"
