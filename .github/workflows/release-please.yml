@@ -1,0 +1,65 @@
+name: release-please
+
+# Every push to main updates one "chore: release X.Y.Z" PR: next version from
+# the Conventional Commits since the last release, CHANGELOG.md, and the
+# version in Cargo.toml/Cargo.lock, melange.yaml and the chart. Merging it
+# tags vX.Y.Z, creates the GitHub Release and runs the publish workflow.
+#
+# Everything uses GITHUB_TOKEN. Events created with it don't trigger other
+# workflows, so publish is called from here (not on tag push) and ci is
+# dispatched on the release PR's branch. Needs the repo setting "Allow GitHub
+# Actions to create and approve pull requests".
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write # tag + GitHub Release, release PR branch
+      pull-requests: write # open/update the release PR
+      actions: write # dispatch ci on the release PR branch
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # The release PR is pushed with GITHUB_TOKEN, which doesn't trigger
+      # pull_request workflows; run ci on its branch so `ci-ok` gates the merge.
+      - name: Run ci on the release PR
+        if: steps.rp.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=$(gh pr list --repo "$GITHUB_REPOSITORY" --label "autorelease: pending" \
+            --json headRefName --jq '.[0].headRefName')
+          if [[ -n $branch ]]; then
+            gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+            echo "ci dispatched on $branch"
+          fi
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write # append digests to the GitHub Release
+      packages: write # push image and chart to GHCR
+      id-token: write # keyless cosign + provenance
+      attestations: write # GitHub artifact attestation
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}

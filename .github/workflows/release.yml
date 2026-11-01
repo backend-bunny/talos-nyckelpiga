@@ -1,35 +1,48 @@
 name: release
 
-# Pushing a tag vX.Y.Z (equal to Cargo.toml's version) publishes
-# ghcr.io/backend-bunny/talos-nyckelpiga:X.Y.Z and :sha-<short>, signs and
-# attests the index digest keylessly, then publishes the Helm chart
+# Publish release vX.Y.Z: ghcr.io/backend-bunny/talos-nyckelpiga:X.Y.Z and
+# :sha-<short>, signed and attested keylessly, then the Helm chart
 # oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga:X.Y.Z pinned to that
-# digest, also signed.
+# digest, also signed; the digests are appended to the GitHub Release.
+#
+# Called by release-please when its release PR is merged. Dispatch by hand
+# only to retry a failed release: it re-pushes the X.Y.Z tags.
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z)
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to (re)publish (vX.Y.Z)
+        type: string
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-26.04
     permissions:
-      contents: read
+      contents: write # append digests to the GitHub Release
       packages: write # push to GHCR
       id-token: write # keyless cosign + provenance
       attestations: write # GitHub artifact attestation
     env:
       IMAGE: ghcr.io/backend-bunny/talos-nyckelpiga
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag }}
           persist-credentials: false
       - uses: ./.github/actions/setup-tools
       - name: Tag matches the version
@@ -102,3 +115,30 @@ jobs:
 
           Chart: \`oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga\` version \`${TAG#v}\` (\`@$CHART_DIGEST\`)
           EOF
+
+      - name: Add digests to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+          CHART_DIGEST: ${{ steps.chart.outputs.digest }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          cat >> "$RUNNER_TEMP/notes.md" <<EOF
+
+          ## Artifacts
+
+          | | Reference |
+          |---|---|
+          | Image | \`$IMAGE@$DIGEST\` |
+          | Helm chart | \`oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga\` \`${TAG#v}\` (\`@$CHART_DIGEST\`) |
+
+          \`\`\`sh
+          cosign verify $IMAGE@$DIGEST \\
+            --certificate-identity-regexp '^https://github.com/backend-bunny/talos-nyckelpiga/' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          cosign verify ghcr.io/backend-bunny/charts/talos-nyckelpiga@$CHART_DIGEST \\
+            --certificate-identity-regexp '^https://github.com/backend-bunny/talos-nyckelpiga/' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+          EOF
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"

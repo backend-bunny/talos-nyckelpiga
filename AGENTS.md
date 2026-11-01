@@ -53,9 +53,14 @@ Build rules (as in container-dropshipping):
   `.agents/wiki/components/build-pipeline.md`.
 - **Pin everything.** Actions by full SHA with a version comment, toolchain
   in `devbox.json` + `devbox.lock`, crates in `Cargo.lock`.
-- **Versions agree.** `Cargo.toml`, `melange.yaml` and the chart's
-  `version`/`appVersion` match, and a release tag is `v<version>`
-  (`hack/check-version.sh`).
+- **Releases come from release-please.** Never bump versions or push
+  release tags by hand: release-please's `chore: release X.Y.Z` PR sets
+  `Cargo.toml`/`Cargo.lock`, `melange.yaml` and the chart (lines marked
+  `x-release-please-version`) together, and merging it publishes.
+  `hack/check-version.sh` fails if they disagree.
+- **Conventional Commits.** PR titles and commit subjects are
+  `type(scope)!: subject` (`hack/check-commits.sh`, run in CI): they decide
+  the next version and the changelog.
 - **Chart renders are reviewed.** Any template or values change updates the
   golden files (`task chart:golden`) in the same PR. The rendered config must
   pass the server's `--check-config` (`hack/chart-test.sh`). Never put TLS
@@ -78,7 +83,8 @@ melange.yaml        # static binary APK (Alpine musl build env)
 apko.yaml           # distroless Wolfi image
 apko.lock.json      # Wolfi packages only, changed only via PR
 hack/               # build/test/lock/publish/notices scripts shared by CI and Taskfile
-.github/workflows/  # ci (PR), release (tag)
+.github/workflows/  # ci (PR), release-please (main → release PR → publish), release (called/dispatch)
+release-please-config.json, .release-please-manifest.json # release automation
 .github/actions/    # setup-tools: devbox toolchain, bwrap sysctl, caches
 devbox.json/.lock   # pinned toolchain
 Taskfile.yml        # local entry points (task check / image / image:test / lock)
@@ -89,8 +95,9 @@ renovate.json       # Renovate config
 ## Publishing contract
 
 - Image: `ghcr.io/backend-bunny/talos-nyckelpiga`, public on GHCR.
-- Published only from a release tag `vX.Y.Z`. Tags: `X.Y.Z` and immutable
-  `sha-<short>`. Consumers pin by **digest**.
+- Published only when a release-please release PR is merged (tag `vX.Y.Z`
+  and a GitHub Release). Tags: `X.Y.Z` and immutable `sha-<short>`.
+  Consumers pin by **digest**.
 - Helm chart: `oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga`,
   version `X.Y.Z`, published by the same release with `image.digest` set to
   that release's image digest, and cosign-signed the same way.
@@ -104,8 +111,9 @@ renovate.json       # Renovate config
 Renovate (`renovate.json`) owns crate updates (grouped, plus weekly
 `Cargo.lock` maintenance), action SHAs, the devbox toolchain, and the Alpine
 branch in `melange.yaml` (Dependency Dashboard approval only: it changes the
-release compiler). It doesn't touch `apko.lock.json`. Run `task lock` before
-a release; there is deliberately no lock-refresh workflow
+release compiler). It doesn't touch `apko.lock.json`. Merge a `task lock`
+PR before a release PR when Wolfi updates should ship; there is deliberately
+no lock-refresh workflow
 (`.agents/wiki/components/build-pipeline.md`). Adding a crate outside the
 existing set needs the maintainer's OK.
 

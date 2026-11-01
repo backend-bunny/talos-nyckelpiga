@@ -1,7 +1,7 @@
 package:
   name: talos-nyckelpiga
-  # Must equal Cargo.toml's version (hack/check-version.sh, run by CI).
-  version: "0.1.0"
+  # Set by release-please (with Cargo.toml and the chart); don't edit by hand.
+  version: "0.1.0" # x-release-please-version
   epoch: 0
   description: "Talos Linux KMS server backed by OpenBao transit"
   copyright:

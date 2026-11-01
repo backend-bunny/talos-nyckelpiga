@@ -68,26 +68,33 @@ every commit, so `lockfile.py merge` adds it at build time and fails if
 `wolfi-baselayout` + `ca-certificates-bundle`: data only, no code that a
 Wolfi CVE fix would change, and the binary is static. Images are published
 only from release tags, so a refresh PR wouldn't ship anything by itself.
-Run `task lock` before tagging a release instead. Revisit if the image gains
+Merge a `task lock` PR before the release PR instead. Revisit if the image gains
 code packages or publishes on merge.
 
 ## CI
 
 `.github/workflows/ci.yml` (PRs and manual dispatch, `contents: read`):
 
+- `conventional-commits` (PRs): `hack/check-commits.sh` on the PR title and
+  every commit subject.
 - `rust`: `hack/cargo-check.sh` (includes the OpenBao integration test).
 - `chart`: `hack/chart-test.sh` and a package dry run.
 - `image`: build, crate-license summary, `hack/test.sh`, publish dry run.
 - `ci-ok`: the single required check.
 
-`.github/workflows/release.yml` (tag `v*`): tag/version check, Rust checks,
+`.github/workflows/release-please.yml` (push to main): see Releasing below.
+
+`.github/workflows/release.yml` (`workflow_call` from release-please, or
+`workflow_dispatch` with an existing tag to retry): checks out the tag,
+tag/version check, Rust and chart checks,
 build, test, then with `packages: write`, `id-token: write` and
 `attestations: write`: `hack/publish.sh` (`PUBLISH_VERSION=1` → tags
 `X.Y.Z` + `sha-<short>`), `cosign sign` on the index digest, `cosign attest`
 of the SPDX SBOM and the notices (`https://github.com/backend-bunny/talos-nyckelpiga/notices/v1`),
 and `actions/attest-build-provenance`. Then the chart: `helm registry
 login` with `GITHUB_TOKEN`, `hack/chart-publish.sh`, `cosign sign` on the
-chart digest.
+chart digest. Finally the image/chart digests and `cosign verify` commands
+are appended to the GitHub Release notes (`contents: write`).
 
 Caches (`setup-tools`): `~/.cargo/registry`, `~/.cargo/git`, `target`, and
 `.cache` (melange APK cache + release target), keyed on `Cargo.lock`,
@@ -95,11 +102,28 @@ Caches (`setup-tools`): `~/.cargo/registry`, `~/.cargo/git`, `target`, and
 
 ## Releasing
 
-1. Bump `version` in `Cargo.toml`, `melange.yaml` and the chart
-   (`version` + `appVersion`), `cargo update -w`, `task lock`,
-   `task chart:golden`, PR, merge.
-2. `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. Take the digest from the run summary; consumers pin it.
+Automated with release-please, see [[decisions/release-please]].
+
+1. Each push to `main` runs `release-please.yml`. It opens or updates the
+   `chore: release X.Y.Z` PR (label `autorelease: pending`): version from the
+   Conventional Commits since the last tag, `CHANGELOG.md`, and the bump in
+   `Cargo.toml` + `Cargo.lock` (rust strategy) and in `melange.yaml` + the
+   chart's `version`/`appVersion` (generic updater on the
+   `# x-release-please-version` lines). It then dispatches `ci` on that
+   branch, because a `GITHUB_TOKEN` push doesn't trigger `pull_request`, so
+   `ci-ok` gates the merge.
+2. Merging the PR makes the next `release-please.yml` run tag `vX.Y.Z` and
+   create the GitHub Release, then call `release.yml` in the same run. A
+   `GITHUB_TOKEN` tag push wouldn't trigger a tag workflow.
+3. Optional before step 2: a `task lock` PR for newer Wolfi packages.
+
+The chart golden files store `VERSION` in place of the chart version
+(`hack/chart-test.sh` normalises it), so the release PR's bump needs no
+regenerated goldens.
+
+Retry a failed publish: run `release` by hand (`workflow_dispatch`) with
+the existing tag. That re-pushes the `X.Y.Z` tags with a new digest, so only
+do it if nothing was published, or bump with a `fix:` instead.
 
 ## Gotchas
 
@@ -111,6 +135,9 @@ Caches (`setup-tools`): `~/.cargo/registry`, `~/.cargo/git`, `target`, and
   the socket, but CI can.
 - In the sandboxed agent session `.github/` is read-only: stage workflow
   changes elsewhere and have the maintainer move them.
+- One-time repo settings: "Allow GitHub Actions to create and approve pull
+  requests" (release-please PR), and OIDC (`id-token: write`) allowed for
+  workflows.
 - First chart publish: the GHCR package `charts/talos-nyckelpiga` is
   created by the release job and may need its visibility set to public by
   hand (as with the image package).

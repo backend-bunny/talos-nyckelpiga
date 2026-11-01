@@ -5,10 +5,10 @@ kind: PodDisruptionBudget
 metadata:
   name: kms-talos-nyckelpiga
   labels:
-    helm.sh/chart: talos-nyckelpiga-0.1.0
+    helm.sh/chart: talos-nyckelpiga-VERSION
     app.kubernetes.io/name: talos-nyckelpiga
     app.kubernetes.io/instance: kms
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
 spec:
   maxUnavailable: 1
@@ -24,10 +24,10 @@ kind: ServiceAccount
 metadata:
   name: kms-talos-nyckelpiga
   labels:
-    helm.sh/chart: talos-nyckelpiga-0.1.0
+    helm.sh/chart: talos-nyckelpiga-VERSION
     app.kubernetes.io/name: talos-nyckelpiga
     app.kubernetes.io/instance: kms
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
 # The pod mounts its own projected token (audience/expiry from values).
 automountServiceAccountToken: false
@@ -39,10 +39,10 @@ kind: ConfigMap
 metadata:
   name: kms-talos-nyckelpiga
   labels:
-    helm.sh/chart: talos-nyckelpiga-0.1.0
+    helm.sh/chart: talos-nyckelpiga-VERSION
     app.kubernetes.io/name: talos-nyckelpiga
     app.kubernetes.io/instance: kms
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
 data:
   config.toml: |
@@ -80,10 +80,10 @@ kind: ConfigMap
 metadata:
   name: kms-talos-nyckelpiga-allowlist
   labels:
-    helm.sh/chart: talos-nyckelpiga-0.1.0
+    helm.sh/chart: talos-nyckelpiga-VERSION
     app.kubernetes.io/name: talos-nyckelpiga
     app.kubernetes.io/instance: kms
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
 data:
   allowlist.toml: |
@@ -97,10 +97,10 @@ kind: Service
 metadata:
   name: kms-talos-nyckelpiga
   labels:
-    helm.sh/chart: talos-nyckelpiga-0.1.0
+    helm.sh/chart: talos-nyckelpiga-VERSION
     app.kubernetes.io/name: talos-nyckelpiga
     app.kubernetes.io/instance: kms
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -124,10 +124,10 @@ kind: Deployment
 metadata:
   name: kms-talos-nyckelpiga
   labels:
-    helm.sh/chart: talos-nyckelpiga-0.1.0
+    helm.sh/chart: talos-nyckelpiga-VERSION
     app.kubernetes.io/name: talos-nyckelpiga
     app.kubernetes.io/instance: kms
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 3
@@ -164,7 +164,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: talos-nyckelpiga
-          image: ghcr.io/backend-bunny/talos-nyckelpiga:0.1.0
+          image: ghcr.io/backend-bunny/talos-nyckelpiga:VERSION
           imagePullPolicy: IfNotPresent
           args: ["--config", "/etc/talos-nyckelpiga/config.toml"]
           env:
