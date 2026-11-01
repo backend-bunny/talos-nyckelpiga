@@ -31,9 +31,10 @@ cosign verify ghcr.io/backend-bunny/charts/talos-nyckelpiga:0.1.0 \
   `openbao.auth.tokenAudience` to match.
 - **With `grpc.hostPort.enabled` (default)**, the namespace must allow
   hostPort, which both baseline and restricted Pod Security forbid:
-  `pod-security.kubernetes.io/enforce: privileged`. The container itself
-  still runs restricted-compliant: non-root 65532, read-only root, no
-  capabilities, RuntimeDefault seccomp.
+  `pod-security.kubernetes.io/enforce: privileged`. **With hostPort off**
+  (LoadBalancer/NodePort Service or TLSRoute), the pod satisfies
+  `restricted`: non-root 65532, read-only root, no capabilities,
+  RuntimeDefault seccomp, only configMap/secret/projected volumes.
 
 ## Minimal values
 
@@ -58,6 +59,7 @@ allowlist:
 | Mode | Values | Notes |
 |---|---|---|
 | **hostPort** (default) | `grpc.hostPort.enabled: true` | Pods on the control planes (default `nodeSelector`/`tolerations`), one per node (`podAntiAffinity: hard`). Talos dials a node IP directly, e.g. a name pinned with `machine.network.extraHostEntries`. Fewest moving parts at boot. |
+| **LoadBalancer / NodePort Service** | `grpc.hostPort.enabled: false`, `service.type: LoadBalancer` (or `NodePort`), address via `service.annotations` (e.g. `lbipam.cilium.io/ips`, `metallb.io/loadBalancerIPs`) | An internal LB address on the nodes' network replaces hostPort: no gateway, TLS still ends in the pod, namespace can be `restricted`. Set `externalTrafficPolicy: Local` to keep the node address as the audit `peer`; with `Cluster` it's SNATed. Restrict with `loadBalancerSourceRanges`. |
 | **Gateway API, TLS passthrough** | `tlsRoute.enabled: true`, `hostnames`, `parentRefs` | The Gateway routes by SNI and the server still terminates TLS with its own cert. Needs a listener with `protocol: TLS`, `tls.mode: Passthrough`. The audit log's `peer` is then the gateway's address. Unsealing at boot then depends on the gateway too. |
 
 Both can be on at once. Keep the endpoint internal either way: the KMS
@@ -67,10 +69,15 @@ in plaintext.
 
 ## Behaviour
 
-- **Rollouts** replace one pod at a time (`maxSurge: 0`, since a hostPort
-  can't be bound twice on a node). A new pod is Ready only once it's logged
-  in to OpenBao, so a rollout pauses rather than replacing working pods
-  while OpenBao is down.
+- **Rollouts**: with hostPort or hard anti-affinity, pods are replaced one
+  at a time (`maxSurge: 0`), since a replacement can't start next to the old
+  pod. Otherwise a new pod starts first (`maxSurge: 1`, `maxUnavailable: 0`).
+  Override with `rollingUpdate`. A new pod is Ready only once it's logged in
+  to OpenBao, so a rollout pauses while OpenBao is down rather than
+  replacing working pods.
+- **Services**: `<fullname>` carries only gRPC (type from `service.type`),
+  and `<fullname>-metrics` (ClusterIP) carries health/metrics, so metrics
+  are never exposed on a load balancer.
 - **Config changes** roll the pods (checksum annotation). **Allowlist and
   TLS Secret changes don't**: the server reloads them, after the kubelet has
   synced the volume (up to about a minute) plus `reloadIntervalSecs`.
@@ -85,7 +92,8 @@ See [`values.yaml`](values.yaml) (every key is commented) and
 [`values.schema.json`](values.schema.json). Main groups: `image`, `tls`,
 `openbao` (address, CA, transit mount, key template, auth), `allowlist`
 (`nodes` or `existingConfigMap` with key `allowlist.toml`), `grpc.hostPort`,
-`tlsRoute`, `serviceMonitor`, `networkPolicy`, `pdb`, scheduling
+`service` (type, annotations, `externalTrafficPolicy`, `nodePort`,
+load-balancer class and source ranges), `rollingUpdate`, `tlsRoute`, `serviceMonitor`, `networkPolicy`, `pdb`, scheduling
 (`nodeSelector`, `tolerations`, `podAntiAffinity`, `affinity`,
 `priorityClassName`).
 

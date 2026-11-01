@@ -65,6 +65,18 @@ for values in "$chart"/ci/*-values.yaml; do
     failed=1
   fi
 
+  # Value sets without hostPort must fit Pod Security `restricted`: no host
+  # ports or namespaces, no privileged containers (the securityContext fields
+  # restricted requires are pinned by the golden files).
+  if grep -q 'enabled: false' <(sed -n '/^grpc:/,/^[a-z]/p' "$values"); then
+    if grep -nE 'hostPort:|hostNetwork:|hostPID:|hostIPC:|hostPath:|privileged: true' "$tmp/$name.yaml"; then
+      echo "FAIL: $name has hostPort off but renders host access" >&2
+      failed=1
+    else
+      echo "no host access (restricted-compatible)"
+    fi
+  fi
+
   extract config.toml < "$tmp/$name.yaml" > "$tmp/$name.config.toml"
   allowlist=$tmp/$name.allowlist.toml
   extract allowlist.toml < "$tmp/$name.yaml" > "$allowlist"
@@ -98,5 +110,11 @@ must_fail "two OpenBao CA sources" "${min[@]}" --set openbao.caCert.configMap=a 
   --set openbao.caCert.secret=b
 must_fail "a missing TLS secret" "${min[@]}" --set tls.secretName=
 must_fail "an unknown anti-affinity mode" "${min[@]}" --set podAntiAffinity=maybe
+must_fail "an unknown Service type" "${min[@]}" --set service.type=ExternalName
+must_fail "a nodePort on a ClusterIP Service" "${min[@]}" --set service.nodePort=30450
+must_fail "a nodePort outside 30000-32767" "${min[@]}" --set service.type=NodePort --set service.nodePort=4050
+must_fail "load balancer source ranges without LoadBalancer" "${min[@]}" \
+  --set 'service.loadBalancerSourceRanges[0]=10.0.0.0/8'
+must_fail "a surge with hostPort" "${min[@]}" --set rollingUpdate.maxSurge=1 --set rollingUpdate.maxUnavailable=0
 
 exit "$failed"

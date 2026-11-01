@@ -20,6 +20,12 @@ retried every 30 s.
   hard anti-affinity). Talos reaches a node IP directly, e.g. a name pinned
   with `extraHostEntries`. Boot-time dependencies: the control-plane pods and
   OpenBao.
+- **Option: LoadBalancer/NodePort Service** (added 2026-11-01, maintainer):
+  an internal LB address (Cilium LB-IPAM, MetalLB) on the nodes' network.
+  No gateway in the boot path, TLS ends in the pod, and the namespace can be
+  `restricted`. `externalTrafficPolicy: Local` keeps the node address as the
+  audit `peer` (with `Cluster` it's SNATed). Health/metrics moved to a
+  separate ClusterIP Service so they're never on the load balancer.
 - **Option: Gateway API `TLSRoute` with TLS passthrough.** The Gateway routes
   by SNI to the ClusterIP Service and the server terminates TLS with its own
   certificate. No server change is needed and TLS stays end to end.
@@ -43,5 +49,7 @@ retried every 30 s.
 ## Consequences
 
 The namespace needs Pod Security `privileged` when hostPort is on (baseline
-and restricted forbid hostPort). Gateway-only installs can drop that
-(`grpc.hostPort.enabled: false`) and run anywhere (`nodeSelector: {}`).
+and restricted forbid hostPort). LoadBalancer/NodePort and gateway installs
+can drop that (`grpc.hostPort.enabled: false`) and run anywhere
+(`nodeSelector: {}`). With soft or no anti-affinity they also roll with a
+surge pod, so a rollout never drops a ready replica.
