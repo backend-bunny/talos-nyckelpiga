@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.1.0...v0.2.0) (2026-11-01)
+
+
+### Features
+
+* **chart:** LoadBalancer/NodePort Service, surge rollouts without hostPort ([#7](https://github.com/backend-bunny/talos-nyckelpiga/issues/7)) ([730464b](https://github.com/backend-bunny/talos-nyckelpiga/commit/730464b5bb9e24ace54da6e2d430127ac540f0b1))
+
 ## 0.1.0 (2026-11-01)
 
 
