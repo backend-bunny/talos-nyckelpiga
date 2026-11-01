@@ -97,6 +97,12 @@ service:
   externalTrafficPolicy: Cluster
   # NodePort/LoadBalancer: fixed node port for gRPC (30000-32767); 0 = assigned.
   nodePort: 0
+  # IP families of the gRPC Service. Empty: the cluster default (SingleStack,
+  # primary family). PreferDualStack/RequireDualStack give it IPv4 and IPv6
+  # addresses on a dual-stack cluster; the server listens on both.
+  ipFamilyPolicy: ""
+  # e.g. [IPv6, IPv4] to make IPv6 the primary family.
+  ipFamilies: []
 
 # Rolling update. Empty: computed. With hostPort or hard anti-affinity a
 # replacement pod can't start next to the old one, so pods are replaced one at

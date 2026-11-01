@@ -2,8 +2,9 @@
 # environment: NYCKELPIGA_<TABLE>__<KEY>, e.g. NYCKELPIGA_OPENBAO__ADDRESS.
 
 [server]
-# gRPC over TLS; Talos dials https://kms.example.com:4050.
-listen = "0.0.0.0:4050"
+# gRPC over TLS; Talos dials https://kms.example.com:4050. "[::]" listens on
+# IPv4 and IPv6 (falls back to IPv4 only if the kernel has no IPv6).
+listen = "[::]:4050"
 # A publicly trusted certificate (Talos can't be given a custom CA for the
 # KMS endpoint), e.g. a cert-manager kubernetes.io/tls Secret mounted here.
 tls_cert = "/etc/talos-nyckelpiga/tls/tls.crt"
@@ -13,7 +14,7 @@ reload_interval_secs = 30
 
 [health]
 # Plain HTTP: /healthz, /readyz (authenticated to OpenBao), /metrics.
-listen = "0.0.0.0:8080"
+listen = "[::]:8080"
 
 [openbao]
 address = "https://openbao.openbao.svc:8200"

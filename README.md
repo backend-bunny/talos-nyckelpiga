@@ -84,10 +84,10 @@ are errors.
 
 | Key | Default | |
 |---|---|---|
-| `server.listen` | `0.0.0.0:4050` | gRPC over TLS |
+| `server.listen` | `[::]:4050` | gRPC over TLS. `[::]` is dual-stack (IPv4 + IPv6, whatever `net.ipv6.bindv6only` says), falling back to `0.0.0.0` if the kernel has no IPv6; any other address binds as given |
 | `server.tls_cert`, `server.tls_key` | (required) | PEM files, re-read on change |
 | `server.reload_interval_secs` | `30` | how often cert and allowlist are checked |
-| `health.listen` | `0.0.0.0:8080` | plain HTTP: `/healthz`, `/readyz`, `/metrics` |
+| `health.listen` | `[::]:8080` | plain HTTP: `/healthz`, `/readyz`, `/metrics` (same dual-stack rule) |
 | `openbao.address` | (required) | e.g. `https://openbao.openbao.svc:8200` |
 | `openbao.ca_cert` | system bundle | PEM CA bundle trusted *instead of* the system roots |
 | `openbao.transit_mount` | `transit` | |

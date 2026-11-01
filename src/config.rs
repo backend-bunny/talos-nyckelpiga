@@ -110,11 +110,12 @@ pub struct AllowlistConfig {
 /// Wolfi's `ca-certificates-bundle` path (also Debian's and Alpine's).
 pub const SYSTEM_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
 
+// [::] is bound dual-stack (IPv4 and IPv6), see crate::net.
 fn default_listen() -> SocketAddr {
-    "0.0.0.0:4050".parse().unwrap()
+    "[::]:4050".parse().unwrap()
 }
 fn default_health_listen() -> SocketAddr {
-    "0.0.0.0:8080".parse().unwrap()
+    "[::]:8080".parse().unwrap()
 }
 fn default_reload_interval() -> u64 {
     30
@@ -272,8 +273,8 @@ mod tests {
     #[test]
     fn defaults() {
         let c = Config::parse(MINIMAL, env(&[])).unwrap();
-        assert_eq!(c.server.listen, "0.0.0.0:4050".parse().unwrap());
-        assert_eq!(c.health.listen, "0.0.0.0:8080".parse().unwrap());
+        assert_eq!(c.server.listen, "[::]:4050".parse().unwrap());
+        assert_eq!(c.health.listen, "[::]:8080".parse().unwrap());
         assert_eq!(c.openbao.transit_mount, "transit");
         assert!(c.openbao.associated_data);
         assert_eq!(c.openbao.key_name("abc"), "talos-kms-abc");

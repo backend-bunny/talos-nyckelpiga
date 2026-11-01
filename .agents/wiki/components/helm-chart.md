@@ -16,7 +16,7 @@ User docs: `charts/talos-nyckelpiga/README.md`. Design: [[decisions/kubernetes-e
 | `deployment.yaml` | Deployment: default 3 replicas, rolling update computed (`maxSurge 0`/`maxUnavailable 1` with hostPort or hard anti-affinity, else `1`/`0`; `rollingUpdate` overrides, surge with hostPort is refused), control-plane `nodeSelector` + toleration, `podAntiAffinity: hard\|soft\|none`, hostPort 4050 (optional), probes `/healthz` (liveness) and `/readyz` (readiness = OpenBao token held), restricted-style security context |
 | `configmap.yaml` | `<fullname>` with `config.toml` (rendered from values, strings via `toJson`); `<fullname>-allowlist` with `allowlist.toml` unless `allowlist.existingConfigMap` |
 | `serviceaccount.yaml` | SA with `automountServiceAccountToken: false` |
-| `service.yaml` | `<fullname>`: `grpc` 4050 only, `service.type` ClusterIP/LoadBalancer/NodePort (annotations, `externalTrafficPolicy`, `nodePort`, LB class/source ranges); `<fullname>-metrics`: ClusterIP `http` 8080, label `component: metrics` |
+| `service.yaml` | `<fullname>`: `grpc` 4050 only, `service.type` ClusterIP/LoadBalancer/NodePort (annotations, `externalTrafficPolicy`, `ipFamilyPolicy`/`ipFamilies`, `nodePort`, LB class/source ranges); `<fullname>-metrics`: ClusterIP `http` 8080, label `component: metrics` |
 | `tlsroute.yaml` | optional Gateway API TLSRoute (`gateway.networking.k8s.io/v1`, standard channel since v1.7.0) |
 | `pdb.yaml` | `maxUnavailable: 1` (default on) |
 | `servicemonitor.yaml` | optional, selects the `component: metrics` Service, `/metrics` on `http` |
