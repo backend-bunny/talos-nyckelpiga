@@ -12,6 +12,7 @@ spec:
   selector:
     matchLabels:
       {{- include "nyckelpiga.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: metrics
   endpoints:
     - port: http
       path: /metrics

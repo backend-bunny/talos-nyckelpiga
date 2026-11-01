@@ -1,15 +1,38 @@
+{{- $type := .Values.service.type }}
+{{- if and (eq $type "ClusterIP") .Values.service.nodePort }}
+{{- fail "service.nodePort needs service.type NodePort or LoadBalancer" }}
+{{- end }}
+{{- if and (ne $type "LoadBalancer") (or .Values.service.loadBalancerClass .Values.service.loadBalancerSourceRanges) }}
+{{- fail "service.loadBalancerClass/loadBalancerSourceRanges need service.type LoadBalancer" }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "nyckelpiga.fullname" . }}
   labels:
     {{- include "nyckelpiga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grpc
+    {{- with .Values.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  type: ClusterIP
+  type: {{ $type }}
+  {{- if ne $type "ClusterIP" }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if eq $type "LoadBalancer" }}
+  {{- with .Values.service.loadBalancerClass }}
+  loadBalancerClass: {{ . }}
+  {{- end }}
+  {{- with .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
   selector:
     {{- include "nyckelpiga.selectorLabels" . | nindent 4 }}
   ports:
@@ -17,6 +40,23 @@ spec:
       port: {{ .Values.grpc.port }}
       targetPort: grpc
       protocol: TCP
+      {{- if and (ne $type "ClusterIP") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+---
+# Health and metrics: cluster-internal only, never on a load balancer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nyckelpiga.fullname" . }}-metrics
+  labels:
+    {{- include "nyckelpiga.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nyckelpiga.selectorLabels" . | nindent 4 }}
+  ports:
     - name: http
       port: {{ .Values.health.port }}
       targetPort: http

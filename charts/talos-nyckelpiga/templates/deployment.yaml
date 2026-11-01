@@ -4,6 +4,17 @@
 {{- if not (has .Values.podAntiAffinity (list "hard" "soft" "none")) }}
 {{- fail "podAntiAffinity must be hard, soft or none" }}
 {{- end }}
+{{- /* A replacement pod can't start next to the old one when they'd share a
+hostPort, or when hard anti-affinity forbids two on a node: replace one at a
+time. Otherwise surge, so a rollout never drops a ready replica. */ -}}
+{{- $oneAtATime := or .Values.grpc.hostPort.enabled (eq .Values.podAntiAffinity "hard") }}
+{{- $rolling := .Values.rollingUpdate }}
+{{- if not $rolling }}
+{{- $rolling = ternary (dict "maxSurge" 0 "maxUnavailable" 1) (dict "maxSurge" 1 "maxUnavailable" 0) $oneAtATime }}
+{{- end }}
+{{- if and .Values.grpc.hostPort.enabled (ne (toString (default 0 $rolling.maxSurge)) "0") }}
+{{- fail "rollingUpdate.maxSurge must be 0 with grpc.hostPort.enabled: two pods can't hold the hostPort on one node" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,11 +26,10 @@ spec:
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
+    # See rollingUpdate in values.yaml. Either way a new pod must be Ready
+    # (logged in to OpenBao) before the rollout continues.
     rollingUpdate:
-      # A hostPort can't be held twice on one node, so never surge. A new pod
-      # must be ready (logged in to OpenBao) before the next one goes.
-      maxSurge: 0
-      maxUnavailable: 1
+      {{- toYaml $rolling | nindent 6 }}
   selector:
     matchLabels:
       {{- include "nyckelpiga.selectorLabels" . | nindent 6 }}

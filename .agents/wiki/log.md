@@ -2,6 +2,22 @@
 
 Newest first. Format: `## [YYYY-MM-DD] <kind> | <subject>`.
 
+## [2026-11-01] add | chart: LoadBalancer/NodePort Service, surge rollouts
+
+- `service.type` (ClusterIP/LoadBalancer/NodePort) with annotations,
+  `externalTrafficPolicy`, `nodePort`, LB class and source ranges: a way to
+  run without hostPort or a gateway, under Pod Security `restricted`.
+- Health/metrics split into `<fullname>-metrics` (ClusterIP); the
+  ServiceMonitor selects it by `component: metrics`.
+- Rolling update computed: surge (1/0) unless hostPort or hard
+  anti-affinity (0/1); `rollingUpdate` overrides; surge with hostPort fails.
+- `hack/chart-test.sh`: `loadbalancer` value set, a no-host-access assertion
+  for hostPort-free sets, 5 more invalid cases.
+- v0.1.0 was released and verified (signatures, SBOM and notices
+  attestations, anonymous chart pull).
+- Sandbox note: `git switch -c <b> origin/main` creates the branch but fails
+  writing upstream tracking to `.git/config`; use `--no-track`.
+
 ## [2026-10-31] change | automated releases with release-please
 
 - Maintainer chose a release-please PR over fully automatic releases or a

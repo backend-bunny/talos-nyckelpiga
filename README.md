@@ -138,7 +138,9 @@ operators:
 
 `oci://ghcr.io/backend-bunny/charts/talos-nyckelpiga`, released with each
 image and defaulting to that image's digest. It covers hostPort on the
-control planes (the default) or a Gateway API TLSRoute with passthrough, an
+control planes (the default), an internal LoadBalancer/NodePort Service, or
+a Gateway API TLSRoute with passthrough (the latter two fit Pod Security
+`restricted`), an
 existing TLS Secret, a projected service-account token for OpenBao, the
 allowlist as a hot-reloaded ConfigMap, a PDB, and an optional ServiceMonitor
 and NetworkPolicy. See [`charts/talos-nyckelpiga/README.md`](charts/talos-nyckelpiga/README.md).

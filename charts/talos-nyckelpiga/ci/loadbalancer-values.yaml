@@ -1,0 +1,28 @@
+# hostPort off: an internal LoadBalancer IP instead, so the namespace can
+# enforce Pod Security `restricted`. Soft anti-affinity on any node, so
+# rollouts surge.
+tls:
+  secretName: kms-tls
+openbao:
+  address: https://openbao.openbao.svc:8200
+  auth:
+    role: talos-nyckelpiga
+allowlist:
+  nodes:
+    - uuid: 4c4c4544-0042-3510-8051-b4c04f4e3732
+      label: worker-1
+grpc:
+  hostPort:
+    enabled: false
+service:
+  type: LoadBalancer
+  annotations:
+    lbipam.cilium.io/ips: 10.0.0.50
+  loadBalancerSourceRanges: [10.0.0.0/16]
+  externalTrafficPolicy: Local
+  nodePort: 30450
+nodeSelector: {}
+tolerations: []
+podAntiAffinity: soft
+serviceMonitor:
+  enabled: true

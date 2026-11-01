@@ -89,6 +89,29 @@
       "type": "object",
       "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
     },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["ClusterIP", "LoadBalancer", "NodePort"] },
+        "annotations": { "type": "object" },
+        "labels": { "type": "object" },
+        "loadBalancerClass": { "type": "string" },
+        "loadBalancerSourceRanges": { "type": "array", "items": { "type": "string" } },
+        "externalTrafficPolicy": { "enum": ["Cluster", "Local"] },
+        "nodePort": {
+          "type": "integer",
+          "anyOf": [{ "const": 0 }, { "minimum": 30000, "maximum": 32767 }]
+        }
+      }
+    },
+    "rollingUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxSurge": { "type": ["integer", "string"] },
+        "maxUnavailable": { "type": ["integer", "string"] }
+      }
+    },
     "tlsRoute": {
       "type": "object",
       "properties": {

@@ -66,7 +66,9 @@ grpc:
   port: 4050
   # Expose the gRPC port on each node's IP. Talos dials it directly (e.g. via
   # machine.network.extraHostEntries). Requires a namespace with Pod Security
-  # `enforce: privileged`: baseline and restricted forbid hostPort.
+  # `enforce: privileged`: baseline and restricted forbid hostPort. With it
+  # off (Service type LoadBalancer/NodePort or a TLSRoute), the pod satisfies
+  # `restricted`.
   hostPort:
     enabled: true
     port: 4050
@@ -75,9 +77,33 @@ health:
   # Plain HTTP: /healthz, /readyz (authenticated to OpenBao), /metrics.
   port: 8080
 
+# Service for the gRPC port: the TLSRoute backend, or how Talos reaches the
+# KMS when hostPort is off. Health/metrics get their own ClusterIP Service
+# (`<fullname>-metrics`), never exposed through a load balancer.
 service:
-  # ClusterIP Service for the gRPC port (TLSRoute backend) and metrics.
+  # ClusterIP (default), LoadBalancer or NodePort. A LoadBalancer with an
+  # internal address on the network the nodes use (e.g. MetalLB or Cilium
+  # LB-IPAM via annotations) replaces hostPort without a gateway and without
+  # Pod Security `privileged`.
+  type: ClusterIP
+  # e.g. {metallb.io/loadBalancerIPs: 10.0.0.50} or {lbipam.cilium.io/ips: 10.0.0.50}
   annotations: {}
+  labels: {}
+  # LoadBalancer only.
+  loadBalancerClass: ""
+  loadBalancerSourceRanges: []
+  # NodePort/LoadBalancer: Local keeps the client (node) address in the audit
+  # log's peer and only routes to nodes running a pod; Cluster SNATs.
+  externalTrafficPolicy: Cluster
+  # NodePort/LoadBalancer: fixed node port for gRPC (30000-32767); 0 = assigned.
+  nodePort: 0
+
+# Rolling update. Empty: computed. With hostPort or hard anti-affinity a
+# replacement pod can't start next to the old one, so pods are replaced one at
+# a time (maxSurge 0, maxUnavailable 1); otherwise a new pod starts and becomes
+# Ready (logged in to OpenBao) before an old one stops (maxSurge 1,
+# maxUnavailable 0).
+rollingUpdate: {}
 
 # Gateway API TLSRoute with TLS passthrough: the Gateway routes by SNI and the
 # server still terminates TLS with its own certificate. The audit log's peer

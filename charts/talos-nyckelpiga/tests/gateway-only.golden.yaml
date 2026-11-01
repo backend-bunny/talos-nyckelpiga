@@ -65,6 +65,7 @@ metadata:
     app.kubernetes.io/instance: kms
     app.kubernetes.io/version: "VERSION"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: grpc
 spec:
   type: ClusterIP
   selector:
@@ -75,6 +76,27 @@ spec:
       port: 4050
       targetPort: grpc
       protocol: TCP
+
+---
+# Source: talos-nyckelpiga/templates/service.yaml
+# Health and metrics: cluster-internal only, never on a load balancer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kms-talos-nyckelpiga-metrics
+  labels:
+    helm.sh/chart: talos-nyckelpiga-VERSION
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+    app.kubernetes.io/version: "VERSION"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: metrics
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: talos-nyckelpiga
+    app.kubernetes.io/instance: kms
+  ports:
     - name: http
       port: 8080
       targetPort: http
@@ -97,9 +119,9 @@ spec:
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
+    # See rollingUpdate in values.yaml. Either way a new pod must be Ready
+    # (logged in to OpenBao) before the rollout continues.
     rollingUpdate:
-      # A hostPort can't be held twice on one node, so never surge. A new pod
-      # must be ready (logged in to OpenBao) before the next one goes.
       maxSurge: 0
       maxUnavailable: 1
   selector:
