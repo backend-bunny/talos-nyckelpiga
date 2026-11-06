@@ -24,15 +24,24 @@ use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
 use tonic::transport::server::Connected;
 
 use crate::metrics::Metrics;
+use crate::net::LimitedIo;
 use crate::watch::FileWatch;
 
 /// TLS handshakes that take longer than this are dropped.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_CONNECTIONS: usize = 64;
+const MAX_HANDSHAKES: usize = 16;
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_CONNECTION_AGE: Duration = Duration::from_secs(300);
+// RFC 9113 section 3.4: the HTTP/2 client preface is 24 bytes. Hyper
+// validates its contents; we bound how long it may take to arrive.
+const CLIENT_PREFACE_LEN: usize = 24;
 
 pub fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
@@ -152,7 +161,7 @@ pub struct PeerAddr(pub SocketAddr);
 
 /// A TLS connection plus its peer address, for tonic's `serve_with_incoming`.
 pub struct TlsConn {
-    inner: TlsStream<TcpStream>,
+    inner: LimitedIo<TlsStream<TcpStream>>,
     peer: SocketAddr,
 }
 
@@ -205,11 +214,28 @@ pub fn incoming(
     listener: TcpListener,
     config: rustls::ServerConfig,
 ) -> tokio_stream::wrappers::ReceiverStream<std::io::Result<TlsConn>> {
+    incoming_with_limits(listener, config, MAX_CONNECTIONS, MAX_HANDSHAKES)
+}
+
+fn incoming_with_limits(
+    listener: TcpListener,
+    config: rustls::ServerConfig,
+    max_connections: usize,
+    max_handshakes: usize,
+) -> tokio_stream::wrappers::ReceiverStream<std::io::Result<TlsConn>> {
     let acceptor = TlsAcceptor::from(Arc::new(config));
-    let (tx, rx) = tokio::sync::mpsc::channel(64);
+    let connections = Arc::new(Semaphore::new(max_connections));
+    let handshakes = Arc::new(Semaphore::new(max_handshakes));
+    let (tx, rx) = tokio::sync::mpsc::channel(max_connections);
     tokio::spawn(async move {
+        let mut tasks = tokio::task::JoinSet::new();
         loop {
-            let (tcp, peer) = match listener.accept().await {
+            let accepted = tokio::select! {
+                _ = tx.closed() => break,
+                Some(_) = tasks.join_next(), if !tasks.is_empty() => continue,
+                accepted = listener.accept() => accepted,
+            };
+            let (tcp, peer) = match accepted {
                 Ok((tcp, peer)) => (tcp, crate::net::canonical_peer(peer)),
                 Err(err) => {
                     tracing::warn!(error = %err, "accept failed");
@@ -217,11 +243,36 @@ pub fn incoming(
                     continue;
                 }
             };
+            // Reject overload before allocating a TLS task. Permits cover
+            // queued, handshaking and established connections, not just the
+            // channel between this accept loop and tonic.
+            let permits = connections
+                .clone()
+                .try_acquire_owned()
+                .and_then(|connection| {
+                    handshakes
+                        .clone()
+                        .try_acquire_owned()
+                        .map(|handshake| (connection, handshake))
+                });
+            let Ok((connection, handshake)) = permits else {
+                drop(tcp);
+                tokio::task::yield_now().await;
+                continue;
+            };
             let acceptor = acceptor.clone();
             let conn_tx = tx.clone();
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(tcp)).await {
                     Ok(Ok(inner)) => {
+                        drop(handshake);
+                        let inner = LimitedIo::new(
+                            inner,
+                            connection,
+                            IDLE_TIMEOUT,
+                            MAX_CONNECTION_AGE,
+                            Some((CLIENT_PREFACE_LEN, HANDSHAKE_TIMEOUT)),
+                        );
                         let _ = conn_tx.send(Ok(TlsConn { inner, peer })).await;
                     }
                     Ok(Err(err)) => {
@@ -230,10 +281,8 @@ pub fn incoming(
                     Err(_) => tracing::debug!(peer = %peer, "tls handshake timed out"),
                 }
             });
-            if tx.is_closed() {
-                return;
-            }
         }
+        // JoinSet drops/aborts pending handshakes when tonic drops incoming.
     });
     tokio_stream::wrappers::ReceiverStream::new(rx)
 }
@@ -241,6 +290,79 @@ pub fn incoming(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncReadExt;
+    use tokio_stream::StreamExt;
+
+    fn test_configs() -> (rustls::ServerConfig, tokio_rustls::TlsConnector) {
+        let pair = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(pair.cert.der().clone()).unwrap();
+        let mut server = rustls::ServerConfig::builder_with_provider(provider())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![pair.cert.der().clone()],
+                rustls::pki_types::PrivatePkcs8KeyDer::from(pair.signing_key.serialize_der())
+                    .into(),
+            )
+            .unwrap();
+        server.alpn_protocols = vec![b"h2".to_vec()];
+        let mut client = rustls::ClientConfig::builder_with_provider(provider())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        client.alpn_protocols = vec![b"h2".to_vec()];
+        (server, tokio_rustls::TlsConnector::from(Arc::new(client)))
+    }
+
+    #[tokio::test]
+    async fn established_connections_hold_capacity_until_dropped() {
+        let (config, connector) = test_configs();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut incoming = incoming_with_limits(listener, config, 1, 1);
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let client = connector
+            .connect(name.clone(), TcpStream::connect(addr).await.unwrap())
+            .await
+            .unwrap();
+        let conn = incoming.next().await.unwrap().unwrap();
+        let refused = tokio::time::timeout(
+            Duration::from_secs(2),
+            connector.connect(name.clone(), TcpStream::connect(addr).await.unwrap()),
+        )
+        .await
+        .unwrap();
+        assert!(
+            refused.is_err(),
+            "connection limit did not cover established TLS sockets"
+        );
+        drop(conn);
+        drop(client);
+        let _client = connector
+            .connect(name, TcpStream::connect(addr).await.unwrap())
+            .await
+            .unwrap();
+        let _conn = incoming.next().await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn dropping_incoming_closes_stalled_handshakes_and_listener() {
+        let (config, _) = test_configs();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let incoming = incoming_with_limits(listener, config, 2, 1);
+        let mut stalled = TcpStream::connect(addr).await.unwrap();
+        tokio::task::yield_now().await;
+        drop(incoming);
+        let closed = tokio::time::timeout(Duration::from_secs(2), stalled.read_u8())
+            .await
+            .unwrap();
+        assert!(closed.is_err());
+        assert!(TcpStream::connect(addr).await.is_err());
+    }
 
     fn pair(name: &str) -> (String, String) {
         let ck = rcgen::generate_simple_self_signed(vec![name.to_owned()]).unwrap();

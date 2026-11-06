@@ -2,7 +2,7 @@
 title: KMS server
 category: component
 tags: [grpc, openbao, transit, tls, allowlist, audit]
-date: 2026-10-31
+date: 2026-11-06
 ---
 
 # KMS server
@@ -60,6 +60,13 @@ Plain reqwest + rustls (ring), see [[decisions/openbao-client-reqwest]].
 
 - TLS roots: `openbao.ca_cert` only, else `$SSL_CERT_FILE`, else
   `/etc/ssl/certs/ca-certificates.crt` (Wolfi's `ca-certificates-bundle`).
+  The bundle is loaded once at startup; CA changes require a restart.
+- Plain HTTP remains supported, with a prominent startup security warning.
+  The warning never includes the configured URL, which could contain secrets.
+- All HTTP redirects are refused (authentication, renewal and transit).
+  Redirect responses map to `UNAVAILABLE` with a fixed message; neither their
+  Location nor their body is logged. Configure an endpoint that serves requests
+  directly, rather than relying on redirects to another OpenBao node.
 - **Kubernetes auth:** `POST auth/<mount>/login {role, jwt}` with the
   projected SA token (re-read on every login, so rotation is picked up).
 - **Token auth:** a token file, validated with `auth/token/lookup-self`.
@@ -79,6 +86,7 @@ From `BaoError::from_response` (status + OpenBao's `errors` strings):
 |---|---|---|
 | connect error, timeout, 500/502/503/504, 429 | unreachable, sealed (`503 Vault is sealed`), standby, rate limit | `UNAVAILABLE` |
 | no token / login failing | not authenticated yet | `UNAVAILABLE` |
+| 3xx | redirect refused | `UNAVAILABLE` |
 | 403 after a fresh login | policy denies the key, or encrypt on a missing key (needs `create`) | `PERMISSION_DENIED` |
 | 400 `encryption key not found` | key deleted: node revoked | `NOT_FOUND` |
 | 400 other (`cipher: message authentication failed`, soft-deleted key, bad ciphertext) | wrong node, tampered blob, AAD mismatch | `INVALID_ARGUMENT` |
@@ -105,6 +113,30 @@ tonic `serve_with_incoming_shutdown`. ALPN offers only `h2` (grpc-go enforces
 ALPN). The certificate comes from a reloading `ResolvesServerCert`, see
 [[decisions/tls-reload]].
 
+### Resource limits
+
+- 64 accepted gRPC connections total, including queued connections and at most
+  16 concurrent handshakes. Admission permits live until the sockets are dropped.
+  Excess connections are closed before spawning tasks. Dropping the incoming
+  stream closes the listener and aborts pending handshakes.
+- After TLS, the 24-byte HTTP/2 client preface must arrive within 10 s; partial
+  input cannot extend that deadline. Established connections have a 30 s idle
+  timeout (reset only by peer input) and a 5 min absolute lifetime. The deadlines
+  also apply when writes stall.
+- Four concurrent streams/RPCs per connection, a 10 s RPC timeout, an 8 KiB
+  header limit and a 4160-byte protobuf decoding limit (4096-byte data plus
+  UUID/tags/lengths). The decoding limit rejects oversized messages before the
+  application is invoked; ordinary requests still check the allowlist first.
+- A separate global semaphore admits 32 active KMS transit operations.
+  Overload returns `RESOURCE_EXHAUSTED` immediately, with no queue of plaintext
+  buffers. The allowlist is checked before this gate too. Cancellation releases
+  capacity and wipes the request's owned plaintext buffers.
+- Health/metrics use a separate budget of 16 connections, with a 10 s idle
+  timeout and a 60 s absolute lifetime, so that listener cannot bypass the
+  gRPC resource limits.
+
+These are fixed server limits; network access restrictions remain necessary.
+
 ## Reloads (`src/watch.rs`)
 
 The certificate pair and the allowlist are polled every
@@ -121,8 +153,11 @@ rendered config.
 ## Zeroization
 
 Wiped on drop: decrypt plaintext (`Zeroizing<Vec<u8>>`), request `data`
-after use, the JSON request body's string values, response bodies, tokens,
-JWTs and the TLS key file contents. **Not reachable:** the serialized request
+in the handler, the base64 encryption plaintext, response bodies, tokens,
+JWTs and the TLS key file contents. Login and transit serialization borrow
+secrets from these owners instead of copying them into ordinary JSON strings.
+Cleanup works on success, error and cancellation; no wipe depends on reaching
+code after an `.await`. **Not reachable:** the serialized request
 body handed to reqwest, hyper/h2 buffers, and the response `Vec` tonic
 encodes. The plaintext crosses those once per call.
 
@@ -139,12 +174,16 @@ No node UUIDs in labels.
 
 - Unit: config parsing and env overrides, allowlist (syntax, duplicates,
   reload keeps the old list on error), error mapping, file watch, cert reload
-  (mismatched pair rejected).
+  (mismatched pair rejected), redirect refusal for all five HTTP call paths,
+  HTTP warning without URL disclosure, admission limits and recovery, fixed
+  preface/idle/lifetime deadlines, handshake shutdown, and cancellation
+  releasing transit capacity while preserving allowlist ordering.
 - `tests/integration.rs` (real `bao server -dev` and a tonic client over TLS,
   self-signed in the test only): round trip; unknown or malformed UUID; wrong
   node; tampered blob; no key auto-create with an `update`-only policy;
   rotation (v1 still unseals); sealed → `UNAVAILABLE` → unsealed heals;
   delete key → `NOT_FOUND`; allowlist hot reload; metrics; logs at TRACE
-  contain no key/ciphertext; certificate reload while a connection stays up;
+  contain no key/ciphertext/token; oversized protobuf rejection; certificate
+  reload while a connection stays up;
   Kubernetes auth login against a fake TokenReview API.
 - bao `-dev` writes `~/.vault-token`; the test gives it its own `HOME`.

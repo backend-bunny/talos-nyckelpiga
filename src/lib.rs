@@ -21,6 +21,7 @@ pub mod proto {
 
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 
@@ -65,16 +66,22 @@ pub async fn run(
     background.spawn(bao.clone().maintain());
     let health = health::router(bao.clone(), metrics.clone());
     background.spawn(async move {
-        if let Err(err) = axum::serve(health_listener, health).await {
+        if let Err(err) = axum::serve(net::HealthListener::new(health_listener), health).await {
             tracing::error!(error = %err, "health server failed");
         }
     });
 
     let incoming = tls::incoming(grpc_listener, cert.server_config()?);
     let result = tonic::transport::Server::builder()
-        .add_service(KmsServiceServer::new(KmsServer::new(
-            allowlist, bao, metrics,
-        )))
+        .max_concurrent_streams(4)
+        .concurrency_limit_per_connection(4)
+        .load_shed(true)
+        .timeout(Duration::from_secs(10))
+        .http2_max_header_list_size(8 * 1024)
+        .add_service(
+            KmsServiceServer::new(KmsServer::new(allowlist, bao, metrics))
+                .max_decoding_message_size(service::MAX_MESSAGE_LEN),
+        )
         .serve_with_incoming_shutdown(incoming, shutdown)
         .await
         .context("grpc server");

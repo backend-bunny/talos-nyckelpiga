@@ -15,10 +15,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
-use serde::Deserialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, RwLock};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::config::{AuthConfig, OpenBaoConfig, SYSTEM_CA_BUNDLE};
 use crate::metrics::Metrics;
@@ -150,8 +149,32 @@ struct LookupData {
     renewable: Option<bool>,
 }
 
+// Borrow secrets from Zeroizing owners: constructing JSON values would make
+// ordinary String copies that survive cancellation without being wiped.
+#[derive(Serialize)]
+struct LoginRequest<'a> {
+    role: &'a str,
+    jwt: &'a str,
+}
+
+#[derive(Serialize)]
+struct TransitRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    plaintext: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ciphertext: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    associated_data: Option<String>,
+}
+
 impl Bao {
     pub fn new(config: OpenBaoConfig, metrics: Arc<Metrics>) -> anyhow::Result<Arc<Self>> {
+        if config.address.starts_with("http://") {
+            // Never print the URL: it could contain credentials or query data.
+            tracing::warn!(
+                "SECURITY WARNING: OpenBao uses unencrypted HTTP; credentials and key material are exposed to anyone who can observe or modify this network traffic; use HTTPS or a trusted encrypted transport"
+            );
+        }
         let ca_path = config
             .ca_cert
             .clone()
@@ -176,6 +199,9 @@ impl Bao {
         .with_no_client_auth();
         let http = reqwest::Client::builder()
             .tls_backend_preconfigured(tls)
+            // X-Vault-Token and POST bodies must never be forwarded to a
+            // redirect destination, including another origin or plain HTTP.
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(config.request_timeout())
             .connect_timeout(config.request_timeout())
             .user_agent(concat!("talos-nyckelpiga/", env!("CARGO_PKG_VERSION")))
@@ -246,7 +272,7 @@ impl Bao {
                 token_path,
             } => {
                 let jwt = read_secret_file(token_path).await?;
-                let body = json!({ "role": role, "jwt": jwt.as_str() });
+                let body = LoginRequest { role, jwt: &jwt };
                 let resp = self
                     .http
                     .post(self.url(&format!("auth/{mount}/login")))
@@ -255,7 +281,6 @@ impl Bao {
                     .send()
                     .await
                     .map_err(BaoError::from_transport)?;
-                drop(body);
                 let auth: AuthResponse = parse_json(resp).await.map_err(|e| match e {
                     // A rejected JWT or role is an auth failure; keep retrying.
                     BaoError::PermissionDenied(m) | BaoError::InvalidRequest(m) => {
@@ -306,7 +331,7 @@ impl Bao {
                 .post(self.url("auth/token/renew-self"))
                 .header("X-Vault-Token", token.secret.as_str())
                 .header(CONTENT_TYPE, "application/json")
-                .body(to_body(&json!({})))
+                .body("{}")
                 .send()
                 .await
                 .map_err(BaoError::from_transport)?;
@@ -410,7 +435,7 @@ impl Bao {
     async fn transit_post<T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
-        body: &serde_json::Value,
+        body: &TransitRequest<'_>,
     ) -> Result<T, BaoError> {
         let url = self.url(&format!("{}/{}", self.config.transit_mount, path));
         let mut retried = false;
@@ -451,15 +476,16 @@ impl Bao {
         struct Data {
             ciphertext: String,
         }
-        let mut body = json!({ "plaintext": B64.encode(plaintext) });
-        if self.config.associated_data {
-            body["associated_data"] = B64.encode(node_uuid).into();
-        }
-        let result = self
+        let plaintext = Zeroizing::new(B64.encode(plaintext));
+        let body = TransitRequest {
+            plaintext: Some(&plaintext),
+            ciphertext: None,
+            associated_data: self.config.associated_data.then(|| B64.encode(node_uuid)),
+        };
+        let resp = self
             .transit_post::<Resp>(&format!("encrypt/{key}"), &body)
-            .await;
-        wipe_json(&mut body);
-        Ok(result?.data.ciphertext)
+            .await?;
+        Ok(resp.data.ciphertext)
     }
 
     /// Transit decrypt: returns the plaintext, wiped on drop.
@@ -477,10 +503,11 @@ impl Bao {
         struct Data {
             plaintext: Zeroizing<String>,
         }
-        let mut body = json!({ "ciphertext": ciphertext });
-        if self.config.associated_data {
-            body["associated_data"] = B64.encode(node_uuid).into();
-        }
+        let body = TransitRequest {
+            plaintext: None,
+            ciphertext: Some(ciphertext),
+            associated_data: self.config.associated_data.then(|| B64.encode(node_uuid)),
+        };
         let resp = self
             .transit_post::<Resp>(&format!("decrypt/{key}"), &body)
             .await?;
@@ -492,20 +519,10 @@ impl Bao {
 }
 
 /// Serialise a request body (reqwest's `json` feature is not enabled).
-fn to_body(value: &serde_json::Value) -> Vec<u8> {
-    serde_json::to_vec(value).expect("a serde_json::Value always serialises")
-}
-
-/// Overwrite string values in a request body we built (best effort: reqwest
-/// serialises into its own buffer, which we can't reach).
-fn wipe_json(value: &mut serde_json::Value) {
-    if let serde_json::Value::Object(map) = value {
-        for v in map.values_mut() {
-            if let serde_json::Value::String(s) = v {
-                s.zeroize();
-            }
-        }
-    }
+fn to_body(value: &impl Serialize) -> Vec<u8> {
+    // Ownership of this serialized copy passes to reqwest; our borrowed
+    // inputs remain in Zeroizing buffers even if the request is cancelled.
+    serde_json::to_vec(value).expect("OpenBao request fields always serialise")
 }
 
 async fn read_secret_file(path: &std::path::Path) -> Result<Zeroizing<String>, BaoError> {
@@ -523,6 +540,12 @@ async fn read_secret_file(path: &std::path::Path) -> Result<Zeroizing<String>, B
 /// buffer is wiped after parsing (it may hold a plaintext or a token).
 async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Result<T, BaoError> {
     let status = resp.status();
+    if status.is_redirection() {
+        // Do not read/log the Location or body: either may contain secrets.
+        return Err(BaoError::Unavailable(
+            "redirect refused; configure a directly reachable OpenBao endpoint".into(),
+        ));
+    }
     let body = Zeroizing::new(
         resp.bytes()
             .await
@@ -538,6 +561,132 @@ async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_config(address: String, token_path: PathBuf) -> OpenBaoConfig {
+        OpenBaoConfig {
+            address,
+            ca_cert: None,
+            transit_mount: "transit".into(),
+            key_template: "node-{uuid}".into(),
+            associated_data: true,
+            request_timeout_secs: 2,
+            auth: AuthConfig::Token { token_path },
+        }
+    }
+
+    #[test]
+    fn plain_http_warns_without_logging_the_url() {
+        #[derive(Clone)]
+        struct Log(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Log {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let log = Log(Arc::new(std::sync::Mutex::new(Vec::new())));
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            Bao::new(
+                test_config(
+                    "http://secret-user:secret-password@localhost:8200/?secret-query".into(),
+                    "unused".into(),
+                ),
+                Arc::new(Metrics::new()),
+            )
+            .unwrap();
+        });
+        let text = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
+        assert!(text.contains("WARN"));
+        assert!(text.contains("SECURITY WARNING"));
+        assert!(text.contains("unencrypted HTTP"));
+        assert!(!text.contains("secret-"));
+    }
+
+    #[tokio::test]
+    async fn redirects_never_receive_authentication_or_transit_requests() {
+        use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
+        let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let location = format!(
+            "http://{}/synthetic-redirect-secret",
+            destination.local_addr().unwrap()
+        );
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        let destination_app = axum::Router::new().fallback(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async { "{}" }
+        });
+        let destination_task =
+            tokio::spawn(async move { axum::serve(destination, destination_app).await.unwrap() });
+        let origin = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}", origin.local_addr().unwrap());
+        let code = Arc::new(AtomicU16::new(307));
+        let response_code = code.clone();
+        let origin_app = axum::Router::new().fallback(move || {
+            let location = location.clone();
+            let code = response_code.load(Ordering::SeqCst);
+            async move {
+                (
+                    StatusCode::from_u16(code).unwrap(),
+                    [("location", location)],
+                    "{\"errors\":[\"synthetic-redirect-secret\"]}",
+                )
+            }
+        });
+        let origin_task =
+            tokio::spawn(async move { axum::serve(origin, origin_app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let secret_file = dir.path().join("secret");
+        std::fs::write(&secret_file, "synthetic-auth-secret").unwrap();
+        let config = test_config(address, secret_file.clone());
+        let client = Bao::new(config.clone(), Arc::new(Metrics::new())).unwrap();
+        let mut k8s_config = config;
+        k8s_config.auth = AuthConfig::Kubernetes {
+            mount: "kubernetes".into(),
+            role: "kms".into(),
+            token_path: secret_file,
+        };
+        let k8s = Bao::new(k8s_config, Arc::new(Metrics::new())).unwrap();
+        for status in [301, 302, 303, 307, 308] {
+            code.store(status, Ordering::SeqCst);
+            let login = client.login().await.unwrap_err();
+            let kubernetes = k8s.login().await.unwrap_err();
+            client
+                .set_token(Some(Token {
+                    secret: Zeroizing::new("synthetic-auth-secret".into()),
+                    expires: None,
+                    renewable: false,
+                    ttl: Duration::ZERO,
+                }))
+                .await;
+            let encrypt = client
+                .encrypt("node", "uuid", b"synthetic-plaintext")
+                .await
+                .unwrap_err();
+            let decrypt = client
+                .decrypt("node", "uuid", "vault:v1:synthetic")
+                .await
+                .unwrap_err();
+            let renew = client.renew().await.unwrap_err();
+            for error in [login, kubernetes, encrypt, decrypt, renew] {
+                assert_eq!(error.code(), tonic::Code::Unavailable);
+                assert!(error.to_string().contains("redirect refused"));
+                assert!(!error.to_string().contains("synthetic-"));
+            }
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+        origin_task.abort();
+        destination_task.abort();
+    }
 
     fn err(status: u16, body: &str) -> BaoError {
         BaoError::from_response(StatusCode::from_u16(status).unwrap(), body.as_bytes())
@@ -592,12 +741,5 @@ mod tests {
             BaoError::Unauthenticated("x".into()).code(),
             Code::Unavailable
         );
-    }
-
-    #[test]
-    fn wipe_json_clears_strings() {
-        let mut v = json!({ "plaintext": "c2VjcmV0", "n": 1 });
-        wipe_json(&mut v);
-        assert!(v["plaintext"].as_str().unwrap().is_empty());
     }
 }

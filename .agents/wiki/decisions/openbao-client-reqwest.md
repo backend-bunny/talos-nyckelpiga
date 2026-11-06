@@ -2,7 +2,7 @@
 title: OpenBao client — plain reqwest, not vaultrs
 category: decision
 tags: [openbao, reqwest, vaultrs]
-date: 2026-10-31
+date: 2026-11-06
 ---
 
 # OpenBao client: plain reqwest
@@ -13,6 +13,17 @@ Talk to the OpenBao HTTP API with `reqwest` 0.13 (`rustls-no-provider` +
 our own rustls `ClientConfig` with ring, `tls_backend_preconfigured`).
 No `json` feature: bodies are serialised with serde_json.
 
+HTTP is allowed with a prominent startup warning; the configured URL is never
+included in that warning. All redirects are disabled, including same-origin
+redirects. Reqwest's automatic redirect policy can forward `X-Vault-Token` and
+POST bodies to another origin or downgrade HTTPS to HTTP. Redirect responses
+return `UNAVAILABLE` without exposing their Location or body. Deployments must
+configure an endpoint that directly serves OpenBao requests.
+
+The custom CA bundle replaces system roots and is loaded at startup. Changing
+it requires a process restart; the incoming TLS certificate watcher does not
+reload this outbound HTTP client's trust store.
+
 ## Why
 
 - Four endpoints: `auth/<mount>/login`, `auth/token/renew-self`,
@@ -22,6 +33,8 @@ No `json` feature: bodies are serialised with serde_json.
   errors through rustify, which makes that coarser.
 - We control the trust store (private CA only, or the system bundle) and
   timeouts directly, and keep response bodies in `Zeroizing` buffers.
+- Login/transit request structs borrow secrets from `Zeroizing` owners so
+  cancellation cannot skip cleanup of a separate JSON string copy.
 - Fewer transitive dependencies.
 
 ## Consequences
