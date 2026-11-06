@@ -38,7 +38,7 @@ pub struct ServerConfig {
     pub tls_cert: PathBuf,
     /// PEM private key (`tls.key`).
     pub tls_key: PathBuf,
-    /// How often the certificate and allowlist files are checked for changes.
+    /// How often the TLS pair, allowlist and OpenBao CA bundle are checked.
     #[serde(default = "default_reload_interval")]
     pub reload_interval_secs: u64,
 }
@@ -66,6 +66,8 @@ pub struct OpenBaoConfig {
     pub address: String,
     /// PEM CA bundle that is trusted *instead of* the system roots. Unset:
     /// the system bundle ([`SYSTEM_CA_BUNDLE`] or `$SSL_CERT_FILE`).
+    /// Polled for changes using server.reload_interval_secs; invalid updates
+    /// keep the previous trust store. Multiple certificates are supported.
     pub ca_cert: Option<PathBuf>,
     /// Transit secrets engine mount path.
     #[serde(default = "default_transit_mount")]

@@ -64,6 +64,7 @@ pub async fn run(
     background.spawn(cert.clone().watch(interval, metrics.clone()));
     background.spawn(allowlist.clone().watch(interval, metrics.clone()));
     background.spawn(bao.clone().maintain());
+    background.spawn(bao.clone().watch_ca(interval));
     let health = health::router(bao.clone(), metrics.clone());
     background.spawn(async move {
         if let Err(err) = axum::serve(net::HealthListener::new(health_listener), health).await {

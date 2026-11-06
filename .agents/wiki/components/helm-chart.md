@@ -29,11 +29,15 @@ User docs: `charts/talos-nyckelpiga/README.md`. Design: [[decisions/kubernetes-e
 | `/etc/talos-nyckelpiga/config.toml` | config ConfigMap (`subPath`) | rollout (`checksum/config` annotation) |
 | `/etc/talos-nyckelpiga/tls/` | existing TLS Secret (dir mount) | live: kubelet sync + `reloadIntervalSecs` |
 | `/etc/talos-nyckelpiga/allowlist/` | allowlist ConfigMap (dir mount) | live, same |
-| `/etc/talos-nyckelpiga/openbao-ca/` | optional ConfigMap or Secret | next pod start (CA is read at startup) |
+| `/etc/talos-nyckelpiga/openbao-ca/` | optional ConfigMap or Secret (dir mount with `items`) | live: kubelet sync + `reloadIntervalSecs`; invalid bundles keep previous trust |
 | `/var/run/secrets/talos-nyckelpiga/serviceaccount/token` | projected SA token (`expirationSeconds` 3600, optional audience) | the kubelet rotates it; read at every login |
 
-TLS and the allowlist must be **directory** mounts: `subPath` mounts never
-receive updates.
+TLS, the allowlist and the OpenBao CA must be **directory** mounts: `subPath`
+mounts never receive updates. Content polling reopens each path and follows
+Kubernetes' atomic `..data` symlink replacement. Allow for the external secret
+controller's refresh interval (if used), kubelet propagation (up to about a
+minute), then the server poll. Overlap old and new CA roots until every KMS
+replica has reloaded and OpenBao serves its new certificate chain.
 
 ## Tests (`hack/chart-test.sh`, `task chart`)
 
