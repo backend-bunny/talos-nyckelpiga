@@ -2,6 +2,22 @@
 
 Newest first. Format: `## [YYYY-MM-DD] <kind> | <subject>`.
 
+## [2026-11-06] add | hot-reload the OpenBao CA bundle
+
+- The selected CA bundle now uses the existing content poller and reload
+  interval. Reopening its path handles kubelet's `..data` symlink swaps; the
+  chart already mounts the CA directory with `items`, without `subPath`.
+- Parse every PEM certificate and build the new HTTP client before swapping.
+  Invalid updates retain previous trust, log/count errors and retry each tick.
+  Multiple roots support old+new overlap. HTTP does not read/watch CA files.
+- Replace the connection pool and TLS session cache along with the roots so
+  new requests cannot use a connection authenticated by a removed root.
+  In-flight requests can finish; token/renewal state is retained.
+- Added `nyckelpiga_openbao_ca_reloads_total{result}` and HTTPS regressions for
+  symlink replacement, overlap, old-root removal, invalid update recovery,
+  token preservation, redirect refusal and log safety. Documented propagation
+  delays and the staged root-rotation procedure.
+
 ## [2026-11-06] fix | security audit: redirects, resource limits, secret cleanup
 
 - Kept plain HTTP support at the maintainer's request, with a prominent

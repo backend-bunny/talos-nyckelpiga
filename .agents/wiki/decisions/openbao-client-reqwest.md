@@ -20,9 +20,18 @@ POST bodies to another origin or downgrade HTTPS to HTTP. Redirect responses
 return `UNAVAILABLE` without exposing their Location or body. Deployments must
 configure an endpoint that directly serves OpenBao requests.
 
-The custom CA bundle replaces system roots and is loaded at startup. Changing
-it requires a process restart; the incoming TLS certificate watcher does not
-reload this outbound HTTP client's trust store.
+The custom CA bundle replaces system roots. The selected file (custom bundle,
+`SSL_CERT_FILE` or system bundle) is loaded at startup and polled with the
+existing `FileWatch` at `server.reload_interval_secs`. Reopening its path each
+tick follows Kubernetes' `..data` symlink swaps without an inode watch or a new
+dependency. Multiple PEM blocks allow old+new root overlap during rotation.
+
+A reload builds and validates a complete replacement client before publishing
+it through `ArcSwap`. It also replaces the connection pool and TLS session
+cache: new requests must not reuse a connection authenticated by a removed
+root. In-flight requests can finish with the old client. Invalid updates keep
+the previous client, emit an error and increment `openbao_ca_reloads_total`,
+then retry next tick. Tokens are retained; changing trust does not force login.
 
 ## Why
 

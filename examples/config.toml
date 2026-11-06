@@ -9,7 +9,7 @@ listen = "[::]:4050"
 # KMS endpoint), e.g. a cert-manager kubernetes.io/tls Secret mounted here.
 tls_cert = "/etc/talos-nyckelpiga/tls/tls.crt"
 tls_key = "/etc/talos-nyckelpiga/tls/tls.key"
-# How often the certificate and allowlist are checked for changes.
+# How often the TLS pair, allowlist and OpenBao CA bundle are checked.
 reload_interval_secs = 30
 
 [health]
@@ -18,7 +18,8 @@ listen = "[::]:8080"
 
 [openbao]
 address = "https://openbao.openbao.svc:8200"
-# Trust only this CA for OpenBao (omit to use the system bundle).
+# Trust this CA bundle for OpenBao (omit to use the system bundle).
+# Hot-reloaded; include old and new roots together during root rotation.
 ca_cert = "/etc/talos-nyckelpiga/openbao-ca/ca.crt"
 transit_mount = "transit"
 # One transit key per node; {uuid} is the node's lowercase SMBIOS UUID.

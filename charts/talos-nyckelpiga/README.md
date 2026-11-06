@@ -88,9 +88,16 @@ in plaintext.
 - **Services**: `<fullname>` carries only gRPC (type from `service.type`),
   and `<fullname>-metrics` (ClusterIP) carries health/metrics, so metrics
   are never exposed on a load balancer.
-- **Config changes** roll the pods (checksum annotation). **Allowlist and
-  TLS Secret changes don't**: the server reloads them, after the kubelet has
-  synced the volume (up to about a minute) plus `reloadIntervalSecs`.
+- **Config changes** roll the pods (checksum annotation). **Allowlist, TLS
+  Secret and OpenBao CA bundle changes reload live** after kubelet volume
+  propagation (up to about a minute) plus `reloadIntervalSecs`. If an external
+  secret controller manages the bundle, its refresh interval adds to that delay.
+  The CA is a directory mount with `items`, so Kubernetes `..data` symlink swaps
+  are detected by the content poller; do not change it to a `subPath` mount.
+  Invalid bundles retain the previous trust store and are reported in logs and
+  `nyckelpiga_openbao_ca_reloads_total{result="error"}`. For root rotation, publish
+  old and new roots together, wait for every replica to reload, switch OpenBao's
+  serving certificate, then remove the old root after verifying the new chain.
 - A **PodDisruptionBudget** (`maxUnavailable: 1`) keeps node drains from
   taking every KMS pod at once.
 - The server's own projected service-account token is mounted

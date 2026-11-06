@@ -60,7 +60,15 @@ Plain reqwest + rustls (ring), see [[decisions/openbao-client-reqwest]].
 
 - TLS roots: `openbao.ca_cert` only, else `$SSL_CERT_FILE`, else
   `/etc/ssl/certs/ca-certificates.crt` (Wolfi's `ca-certificates-bundle`).
-  The bundle is loaded once at startup; CA changes require a restart.
+  The selected file is polled with `server.reload_interval_secs` (including
+  the environment/system bundle fallback). Multiple PEM certificate blocks
+  support overlapping roots. Every certificate must parse; missing, empty,
+  malformed or partly invalid updates retain the previous trust store, log
+  an error and retry on every tick. Invalid startup bundles are fatal.
+- Successful CA reloads atomically swap the reqwest client **and its pool**.
+  New requests cannot reuse connections or TLS sessions authenticated by a
+  removed root; in-flight requests may finish with their old snapshot. Tokens
+  and their renewal state are preserved. Plain HTTP does not read/watch CAs.
 - Plain HTTP remains supported, with a prominent startup security warning.
   The warning never includes the configured URL, which could contain secrets.
 - All HTTP redirects are refused (authentication, renewal and transit).
@@ -139,12 +147,21 @@ These are fixed server limits; network access restrictions remain necessary.
 
 ## Reloads (`src/watch.rs`)
 
-The certificate pair and the allowlist are polled every
+The certificate pair, allowlist and selected OpenBao CA bundle are polled every
 `reload_interval_secs` (30 s) by hashing the contents, which works with
 Kubernetes' `..data` symlink swaps. A change that fails to parse, or a cert
 that doesn't match its key, keeps the previous version, logs an error,
 increments `*_reloads_total{result="error"}` and is retried on every tick
 until fixed. A bad allowlist or certificate **at startup** is fatal.
+
+The CA watcher reopens `ca.crt` through `..data` on each tick, rather than
+watching the old inode. The chart already uses a directory mount with `items`;
+`subPath` would prevent updates reaching the process. Rotation takes the secret
+controller refresh interval (if used), kubelet propagation (up to about a
+minute), then one server poll. Publish old+new roots, wait for every replica's
+successful reload, switch OpenBao's serving chain, verify, then retire the old
+root. CA reload counters report parsing/client construction, not a connectivity
+probe: a valid bundle containing the wrong roots will still be activated.
 
 `--check-config` loads the config (with env overrides) and the allowlist
 and exits: used by the chart tests ([[components/helm-chart]]) on every
@@ -167,6 +184,7 @@ encodes. The plaintext crosses those once per call.
 `nyckelpiga_request_duration_seconds{op}`,
 `nyckelpiga_openbao_authenticated`, `nyckelpiga_openbao_auth_total{kind,result}`,
 `nyckelpiga_tls_reloads_total{result}`,
+`nyckelpiga_openbao_ca_reloads_total{result}`,
 `nyckelpiga_allowlist_reloads_total{result}`, `nyckelpiga_allowlist_nodes`.
 No node UUIDs in labels.
 
@@ -178,6 +196,11 @@ No node UUIDs in labels.
   HTTP warning without URL disclosure, admission limits and recovery, fixed
   preface/idle/lifetime deadlines, handshake shutdown, and cancellation
   releasing transit capacity while preserving allowlist ordering.
+- HTTPS CA tests: Kubernetes-style `..data` replacement with a live watcher,
+  old+new root overlap, removal of an old root despite live old connection pools,
+  preservation of tokens and redirect refusal, invalid/partial/empty/missing
+  bundle recovery, retry without another file update, no CA reads for HTTP,
+  and reload logs excluding file contents.
 - `tests/integration.rs` (real `bao server -dev` and a tonic client over TLS,
   self-signed in the test only): round trip; unknown or malformed UUID; wrong
   node; tampered blob; no key auto-create with an `update`-only policy;

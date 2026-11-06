@@ -8,7 +8,7 @@ the top of [log.md](log.md)).
 
 | Page | Summary |
 |------|---------|
-| [components/kms-server.md](components/kms-server.md) | The server: protocol, allowlist, OpenBao auth/renewal and redirect refusal, resource limits, TLS/reloads, cancellation-safe zeroization, metrics, tests |
+| [components/kms-server.md](components/kms-server.md) | The server: protocol, allowlist, OpenBao auth/renewal and redirect refusal, CA hot rotation, resource limits, TLS/reloads, cancellation-safe zeroization, metrics, tests |
 | [components/talos-kms-client.md](components/talos-kms-client.md) | How Talos v1.14.5 uses the KMS, from source: 32-byte key, lockToState, dialing (TLS roots, ALPN h2, timeouts), 30 s unseal retry, SMBIOS UUID |
 | [components/helm-chart.md](components/helm-chart.md) | Helm chart: resources, hostPort vs TLSRoute passthrough, mounts and reloads, rollout, tests, OCI publish/sign |
 | [components/build-pipeline.md](components/build-pipeline.md) | devbox, hack/ scripts, melange (Alpine, offline, static) + apko (Wolfi), lockfile, CI, release/sign, why no lock-refresh |
@@ -18,7 +18,7 @@ the top of [log.md](log.md)).
 | Page | Summary |
 |------|---------|
 | [decisions/rust-tonic.md](decisions/rust-tonic.md) | Rust + tonic/prost, rustls with ring; approved crate set |
-| [decisions/openbao-client-reqwest.md](decisions/openbao-client-reqwest.md) | Plain reqwest: status mapping, HTTP warning, redirect refusal, custom CA trust and secret ownership |
+| [decisions/openbao-client-reqwest.md](decisions/openbao-client-reqwest.md) | Plain reqwest: status mapping, HTTP warning, redirect refusal, CA/pool hot reload and secret ownership |
 | [decisions/per-node-transit-keys.md](decisions/per-node-transit-keys.md) | One key per node, ciphertext verbatim, UUID as AAD, no auto-create |
 | [decisions/tls-reload.md](decisions/tls-reload.md) | Reloading rustls cert resolver (polling) instead of exit-and-restart |
 | [decisions/static-musl-alpine-build.md](decisions/static-musl-alpine-build.md) | Static musl via an Alpine melange env (Wolfi has no musl Rust; static glibc = LGPL) |

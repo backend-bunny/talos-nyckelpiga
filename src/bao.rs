@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use arc_swap::ArcSwap;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use reqwest::StatusCode;
@@ -21,6 +22,7 @@ use zeroize::Zeroizing;
 
 use crate::config::{AuthConfig, OpenBaoConfig, SYSTEM_CA_BUNDLE};
 use crate::metrics::Metrics;
+use crate::watch::FileWatch;
 
 /// Upper bound for a transit plaintext or ciphertext accepted from a client.
 /// Talos seals 32 bytes and stores ~90-byte ciphertexts in a LUKS2 header
@@ -118,12 +120,18 @@ struct Token {
 }
 
 pub struct Bao {
-    http: reqwest::Client,
+    http: ArcSwap<reqwest::Client>,
+    ca_watch: Option<CaWatch>,
     config: OpenBaoConfig,
     token: RwLock<Option<Arc<Token>>>,
     /// Serialises logins so concurrent 403s don't stampede OpenBao.
     login_lock: Mutex<()>,
     metrics: Arc<Metrics>,
+}
+
+struct CaWatch {
+    path: PathBuf,
+    files: std::sync::Mutex<FileWatch>,
 }
 
 #[derive(Deserialize)]
@@ -175,40 +183,29 @@ impl Bao {
                 "SECURITY WARNING: OpenBao uses unencrypted HTTP; credentials and key material are exposed to anyone who can observe or modify this network traffic; use HTTPS or a trusted encrypted transport"
             );
         }
-        let ca_path = config
-            .ca_cert
-            .clone()
-            .or_else(|| std::env::var_os("SSL_CERT_FILE").map(PathBuf::from))
-            .unwrap_or_else(|| SYSTEM_CA_BUNDLE.into());
-        let mut roots = rustls::RootCertStore::empty();
-        if config.address.starts_with("https://") {
-            let pem = std::fs::read(&ca_path)
-                .with_context(|| format!("reading OpenBao CA bundle {}", ca_path.display()))?;
-            let certs = crate::tls::parse_certs(&pem)
-                .with_context(|| format!("parsing OpenBao CA bundle {}", ca_path.display()))?;
-            let (added, _ignored) = roots.add_parsable_certificates(certs);
-            if added == 0 {
-                anyhow::bail!("no usable CA certificates in {}", ca_path.display());
-            }
-        }
-        let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-        let http = reqwest::Client::builder()
-            .tls_backend_preconfigured(tls)
-            // X-Vault-Token and POST bodies must never be forwarded to a
-            // redirect destination, including another origin or plain HTTP.
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(config.request_timeout())
-            .connect_timeout(config.request_timeout())
-            .user_agent(concat!("talos-nyckelpiga/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .context("building OpenBao HTTP client")?;
+        let (http, ca_watch) = if config.address.starts_with("https://") {
+            let path = config
+                .ca_cert
+                .clone()
+                .or_else(|| std::env::var_os("SSL_CERT_FILE").map(PathBuf::from))
+                .unwrap_or_else(|| SYSTEM_CA_BUNDLE.into());
+            let mut files = FileWatch::new(vec![path.clone()]);
+            let contents = files.read()?;
+            let http = build_http(&config, Some(&contents[0]))
+                .with_context(|| format!("loading OpenBao CA bundle {}", path.display()))?;
+            (
+                http,
+                Some(CaWatch {
+                    path,
+                    files: std::sync::Mutex::new(files),
+                }),
+            )
+        } else {
+            (build_http(&config, None)?, None)
+        };
         Ok(Arc::new(Self {
-            http,
+            http: ArcSwap::from_pointee(http),
+            ca_watch,
             config,
             token: RwLock::new(None),
             login_lock: Mutex::new(()),
@@ -218,6 +215,54 @@ impl Bao {
 
     pub fn config(&self) -> &OpenBaoConfig {
         &self.config
+    }
+
+    /// Reopen the original path on every tick: Kubernetes replaces ..data,
+    /// not the mounted file's inode. Invalid updates keep the previous client.
+    fn reload_ca(&self) {
+        let Some(ca) = &self.ca_watch else { return };
+        let mut files = ca.files.lock().unwrap();
+        let result = files.read_if_changed().and_then(|contents| {
+            contents
+                .map(|contents| build_http(&self.config, Some(&contents[0])))
+                .transpose()
+        });
+        match result {
+            Ok(None) => {}
+            Ok(Some(http)) => {
+                // Replace the pool too: subsequent requests must not reuse a
+                // connection/session authenticated by a removed root. Existing
+                // in-flight requests retain their snapshot until they finish.
+                self.http.store(Arc::new(http));
+                self.metrics
+                    .openbao_ca_reloads
+                    .with_label_values(&["ok"])
+                    .inc();
+                tracing::info!(ca = %ca.path.display(), "openbao ca bundle reloaded");
+            }
+            Err(error) => {
+                files.invalidate();
+                self.metrics
+                    .openbao_ca_reloads
+                    .with_label_values(&["error"])
+                    .inc();
+                tracing::error!(ca = %ca.path.display(), error = %format!("{error:#}"),
+                    "openbao ca reload failed; keeping previous trust store");
+            }
+        }
+    }
+
+    pub async fn watch_ca(self: Arc<Self>, interval: Duration) {
+        if self.ca_watch.is_none() {
+            return;
+        }
+        let mut tick = tokio::time::interval(interval);
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let this = self.clone();
+            let _ = tokio::task::spawn_blocking(move || this.reload_ca()).await;
+        }
     }
 
     fn url(&self, path: &str) -> String {
@@ -275,6 +320,7 @@ impl Bao {
                 let body = LoginRequest { role, jwt: &jwt };
                 let resp = self
                     .http
+                    .load_full()
                     .post(self.url(&format!("auth/{mount}/login")))
                     .header(CONTENT_TYPE, "application/json")
                     .body(to_body(&body))
@@ -300,6 +346,7 @@ impl Bao {
                 let secret = read_secret_file(token_path).await?;
                 let resp = self
                     .http
+                    .load_full()
                     .get(self.url("auth/token/lookup-self"))
                     .header("X-Vault-Token", secret.as_str())
                     .send()
@@ -328,6 +375,7 @@ impl Bao {
         let result: Result<AuthResponse, BaoError> = async {
             let resp = self
                 .http
+                .load_full()
                 .post(self.url("auth/token/renew-self"))
                 .header("X-Vault-Token", token.secret.as_str())
                 .header(CONTENT_TYPE, "application/json")
@@ -443,6 +491,7 @@ impl Bao {
             let token = self.current_token().await?;
             let resp = self
                 .http
+                .load_full()
                 .post(&url)
                 .header("X-Vault-Token", token.secret.as_str())
                 .header(CONTENT_TYPE, "application/json")
@@ -518,6 +567,32 @@ impl Bao {
     }
 }
 
+/// Build completely before publication. Every root must parse; a partly broken
+/// bundle must not silently remove trust. Multiple PEM blocks allow CA overlap.
+fn build_http(config: &OpenBaoConfig, pem: Option<&[u8]>) -> anyhow::Result<reqwest::Client> {
+    let mut roots = rustls::RootCertStore::empty();
+    if let Some(pem) = pem {
+        for cert in crate::tls::parse_certs(pem).context("parsing OpenBao CA bundle")? {
+            roots
+                .add(cert)
+                .context("invalid certificate in OpenBao CA bundle")?;
+        }
+    }
+    let tls = rustls::ClientConfig::builder_with_provider(crate::tls::provider())
+        .with_safe_default_protocol_versions()?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(tls)
+        // Applies equally to initial clients and clients built after reload.
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(config.request_timeout())
+        .connect_timeout(config.request_timeout())
+        .user_agent(concat!("talos-nyckelpiga/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .context("building OpenBao HTTP client")
+}
+
 /// Serialise a request body (reqwest's `json` feature is not enabled).
 fn to_body(value: &impl Serialize) -> Vec<u8> {
     // Ownership of this serialized copy passes to reqwest; our borrowed
@@ -557,6 +632,9 @@ async fn parse_json<T: for<'de> Deserialize<'de>>(resp: reqwest::Response) -> Re
     }
     serde_json::from_slice(&body).map_err(|e| BaoError::Other(format!("unexpected response: {e}")))
 }
+
+#[cfg(test)]
+mod ca_tests;
 
 #[cfg(test)]
 mod tests {

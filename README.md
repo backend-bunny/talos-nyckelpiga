@@ -89,10 +89,10 @@ are errors.
 |---|---|---|
 | `server.listen` | `[::]:4050` | gRPC over TLS. `[::]` is dual-stack (IPv4 + IPv6, whatever `net.ipv6.bindv6only` says), falling back to `0.0.0.0` if the kernel has no IPv6; any other address binds as given |
 | `server.tls_cert`, `server.tls_key` | (required) | PEM files, re-read on change |
-| `server.reload_interval_secs` | `30` | how often cert and allowlist are checked |
+| `server.reload_interval_secs` | `30` | how often the TLS pair, allowlist and OpenBao CA bundle are checked |
 | `health.listen` | `[::]:8080` | plain HTTP: `/healthz`, `/readyz`, `/metrics` (same dual-stack rule) |
 | `openbao.address` | (required) | e.g. `https://openbao.openbao.svc:8200` |
-| `openbao.ca_cert` | system bundle | PEM CA bundle trusted *instead of* the system roots; loaded at startup, restart after changes |
+| `openbao.ca_cert` | system bundle | PEM CA bundle trusted *instead of* the system roots; multiple roots supported, hot-reloaded |
 | `openbao.transit_mount` | `transit` | |
 | `openbao.key_template` | `talos-kms-{uuid}` | transit key name per node |
 | `openbao.associated_data` | `true` | bind blobs to the node UUID |
@@ -121,6 +121,23 @@ non-Kubernetes setups.
 needs neither the TLS files nor OpenBao.
 
 Logs are JSON on stderr; `RUST_LOG` sets the level (default `info`).
+
+For HTTPS to OpenBao, the selected CA bundle (`openbao.ca_cert`, otherwise
+`SSL_CERT_FILE`, otherwise the system bundle) is polled for changes. Valid
+updates replace the HTTP client and its connection pool; subsequent requests
+use the new roots. Requests already in flight can finish with the old client.
+Missing, empty or malformed bundles keep the previous trust store, log an error,
+and are retried on each poll. Reloads are counted in
+`nyckelpiga_openbao_ca_reloads_total{result="ok"|"error"}`.
+
+The poller reopens the configured path each time, so Kubernetes `..data`
+symlink swaps are detected. Mount the containing directory, as the chart does;
+`subPath` mounts do not receive updates. Allow for the external secret
+controller's refresh interval, kubelet propagation (up to about a minute), and
+the server's reload interval. For root rotation, first publish a bundle with
+**both old and new roots**, wait for every KMS replica to reload it, rotate the
+OpenBao serving certificate, and remove the old root only after verifying the
+new certificate works everywhere.
 
 Connections and requests have fixed resource limits. The gRPC listener admits
 64 connections, including at most 16 concurrent TLS handshakes. TLS negotiation

@@ -18,6 +18,7 @@ pub struct Metrics {
     /// OpenBao logins and token renewals by `kind` and `result`.
     pub openbao_auth: IntCounterVec,
     pub tls_reloads: IntCounterVec,
+    pub openbao_ca_reloads: IntCounterVec,
     pub allowlist_reloads: IntCounterVec,
     pub allowlist_nodes: IntGauge,
 }
@@ -54,6 +55,14 @@ impl Metrics {
             &["result"],
         )
         .unwrap();
+        let openbao_ca_reloads = IntCounterVec::new(
+            Opts::new(
+                "openbao_ca_reloads_total",
+                "OpenBao CA bundle reloads by result",
+            ),
+            &["result"],
+        )
+        .unwrap();
         let allowlist_nodes =
             IntGauge::new("allowlist_nodes", "Nodes in the active allowlist").unwrap();
 
@@ -63,6 +72,7 @@ impl Metrics {
             Box::new(openbao_authenticated.clone()),
             Box::new(openbao_auth.clone()),
             Box::new(tls_reloads.clone()),
+            Box::new(openbao_ca_reloads.clone()),
             Box::new(allowlist_reloads.clone()),
             Box::new(allowlist_nodes.clone()),
         ] {
@@ -75,6 +85,7 @@ impl Metrics {
             openbao_authenticated,
             openbao_auth,
             tls_reloads,
+            openbao_ca_reloads,
             allowlist_reloads,
             allowlist_nodes,
         }
