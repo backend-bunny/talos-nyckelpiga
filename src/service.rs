@@ -8,8 +8,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use tokio::sync::Semaphore;
 use tonic::{Code, Request, Response, Status};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::allowlist::{Node, Refusal, SharedAllowlist};
 use crate::bao::{Bao, BaoError, MAX_DATA_LEN};
@@ -18,12 +19,19 @@ use crate::proto::kms_service_server::KmsService;
 use crate::proto::{Request as KmsRequest, Response as KmsResponse};
 use crate::tls::PeerAddr;
 
+/// Bound transit work globally, across all gRPC connections. Excess requests
+/// fail immediately instead of building a queue of plaintext-bearing futures.
+const MAX_ACTIVE_REQUESTS: usize = 32;
+/// 4 KiB data + a 36-byte UUID + protobuf tags/lengths and a little headroom.
+pub(crate) const MAX_MESSAGE_LEN: usize = MAX_DATA_LEN + 64;
+
 /// Talos seals a 32-byte random key (internal/pkg/encryption/keys/kms.go).
 /// Other sizes are accepted (the protocol doesn't fix one) up to MAX_DATA_LEN.
 pub struct KmsServer {
     allowlist: Arc<SharedAllowlist>,
     bao: Arc<Bao>,
     metrics: Arc<Metrics>,
+    requests: Semaphore,
 }
 
 #[derive(Clone, Copy)]
@@ -46,6 +54,7 @@ enum Failure {
     Refused(Refusal),
     BadRequest(&'static str),
     Bao(BaoError),
+    Overloaded,
 }
 
 impl Failure {
@@ -59,6 +68,7 @@ impl Failure {
             }
             Failure::BadRequest(msg) => Status::invalid_argument(*msg),
             Failure::Bao(err) => Status::new(err.code(), err.to_string()),
+            Failure::Overloaded => Status::resource_exhausted("too many active KMS requests"),
         }
     }
 }
@@ -69,6 +79,7 @@ impl KmsServer {
             allowlist,
             bao,
             metrics,
+            requests: Semaphore::new(MAX_ACTIVE_REQUESTS),
         }
     }
 
@@ -84,12 +95,11 @@ impl KmsServer {
             .map(|p| p.0.to_string())
             .or_else(|| request.remote_addr().map(|a| a.to_string()))
             .unwrap_or_else(|| "unknown".into());
-        let mut req = request.into_inner();
+        let KmsRequest { node_uuid, data } = request.into_inner();
+        let mut data = Zeroizing::new(data);
         let mut node: Option<Node> = None;
-        let result = self
-            .process(op, &req.node_uuid, &mut req.data, &mut node)
-            .await;
-        req.data.zeroize();
+        let result = self.process(op, &node_uuid, &mut data, &mut node).await;
+        drop(data);
 
         let elapsed = start.elapsed();
         let (result_label, status) = match &result {
@@ -126,6 +136,7 @@ impl KmsServer {
                     Failure::Refused(r) => r.to_string(),
                     Failure::BadRequest(m) => (*m).to_owned(),
                     Failure::Bao(e) => e.to_string(),
+                    Failure::Overloaded => "too many active KMS requests".into(),
                 };
                 tracing::warn!(
                     target: "audit", op = op.as_str(), node_uuid = uuid, node_label = label, peer,
@@ -162,6 +173,10 @@ impl KmsServer {
         if data.len() > MAX_DATA_LEN {
             return Err(Failure::BadRequest("data is too large"));
         }
+        let _permit = self
+            .requests
+            .try_acquire()
+            .map_err(|_| Failure::Overloaded)?;
         let key = self.bao.config().key_name(&node.uuid);
         match op {
             Op::Seal => {
@@ -195,6 +210,7 @@ fn code_label(code: Code) -> &'static str {
         Code::NotFound => "not_found",
         Code::Unavailable => "unavailable",
         Code::Internal => "internal",
+        Code::ResourceExhausted => "resource_exhausted",
         _ => "other",
     }
 }
@@ -207,5 +223,101 @@ impl KmsService for KmsServer {
 
     async fn unseal(&self, request: Request<KmsRequest>) -> Result<Response<KmsResponse>, Status> {
         self.handle(Op::Unseal, request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{AuthConfig, OpenBaoConfig};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn cancelling_transit_releases_global_capacity_and_unknown_nodes_still_fail_first() {
+        const UUID: &str = "4c4c4544-0042-3510-8051-b4c04f4e3732";
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        let received = Arc::new(tokio::sync::Notify::new());
+        let notify = received.clone();
+        let app = axum::Router::new()
+            .route(
+                "/v1/auth/token/lookup-self",
+                axum::routing::get(|| async { "{\"data\":{\"ttl\":3600,\"renewable\":false}}" }),
+            )
+            .fallback(move || {
+                let notify = notify.clone();
+                async move {
+                    notify.notify_one();
+                    std::future::pending::<&'static str>().await
+                }
+            });
+        let backend = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let token_path = dir.path().join("token");
+        std::fs::write(&token_path, "synthetic-token").unwrap();
+        let allowlist_path = dir.path().join("allowlist.toml");
+        std::fs::write(&allowlist_path, format!("[[node]]\nuuid = \"{UUID}\"\n")).unwrap();
+        let metrics = Arc::new(Metrics::new());
+        let bao = Bao::new(
+            OpenBaoConfig {
+                address,
+                ca_cert: None,
+                transit_mount: "transit".into(),
+                key_template: "node-{uuid}".into(),
+                associated_data: true,
+                request_timeout_secs: 5,
+                auth: AuthConfig::Token { token_path },
+            },
+            metrics.clone(),
+        )
+        .unwrap();
+        bao.login().await.unwrap();
+        let mut kms = KmsServer::new(
+            SharedAllowlist::load(&allowlist_path).unwrap(),
+            bao,
+            metrics,
+        );
+        kms.requests = Semaphore::new(1);
+        let request = |uuid: &str| {
+            Request::new(KmsRequest {
+                node_uuid: uuid.into(),
+                data: vec![7; 32],
+            })
+        };
+        let mut first = Box::pin(kms.seal(request(UUID)));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                _ = &mut first => panic!("transit unexpectedly finished"),
+                _ = received.notified() => {}
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            kms.seal(request(UUID)).await.unwrap_err().code(),
+            Code::ResourceExhausted
+        );
+        assert_eq!(
+            kms.seal(request("00000000-0000-0000-0000-000000000001"))
+                .await
+                .unwrap_err()
+                .code(),
+            Code::PermissionDenied
+        );
+        // Dropping the in-flight RPC releases its permit and Zeroizing
+        // plaintext owners, even while the HTTP response is still pending.
+        drop(first);
+        assert_eq!(kms.requests.available_permits(), 1);
+        let mut next = Box::pin(kms.seal(request(UUID)));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                _ = &mut next => panic!("capacity not reusable after cancellation"),
+                _ = received.notified() => {}
+            }
+        })
+        .await
+        .unwrap();
+        drop(next);
+        backend.abort();
     }
 }

@@ -345,6 +345,23 @@ async fn seal_unseal_against_openbao() {
             .code(),
         Code::InvalidArgument
     );
+    // Transport decoding is bounded before a large request can reach the
+    // allowlist or OpenBao. Normal-size unknown UUIDs still get denied above.
+    assert_eq!(
+        kms.seal(req(NODE_UNKNOWN, &vec![0; 8192]))
+            .await
+            .unwrap_err()
+            .code(),
+        Code::OutOfRange
+    );
+    // The full application limit plus UUID/protobuf overhead still decodes.
+    assert_eq!(
+        kms.seal(req(NODE_UNKNOWN, &vec![0; 4096]))
+            .await
+            .unwrap_err()
+            .code(),
+        Code::PermissionDenied
+    );
     let tampered = sealed_str.replacen("vault:v1:", "vault:v1:AAAA", 1);
     assert_eq!(
         kms.unseal(req(NODE_A, tampered.as_bytes()))
@@ -464,6 +481,7 @@ async fn seal_unseal_against_openbao() {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD;
     for secret in [
+        std::fs::read_to_string(&token_path).unwrap(),
         b64.encode(key),
         b64.encode(&key[..12]),
         "vault:v".to_owned(),

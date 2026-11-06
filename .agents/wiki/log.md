@@ -2,6 +2,22 @@
 
 Newest first. Format: `## [YYYY-MM-DD] <kind> | <subject>`.
 
+## [2026-11-06] fix | security audit: redirects, resource limits, secret cleanup
+
+- Kept plain HTTP support at the maintainer's request, with a prominent
+  security warning that omits the configured URL. Disabled redirects for
+  OpenBao authentication, renewal and transit; a 3xx returns `UNAVAILABLE`.
+- Bounded gRPC connections and handshakes, added preface/idle/lifetime
+  deadlines, capped protobuf/header sizes and per-connection/global request
+  concurrency. Health/metrics have their own connection budget and deadlines.
+- Request data and base64 plaintext now wipe on drop, including cancellation.
+  Borrowed login/transit request structs avoid unwiped JWT/JSON string copies.
+- Added redirect, admission/deadline, shutdown, cancellation and oversized
+  message regressions; extended the TRACE log check to the OpenBao token.
+  Added tokio's test-util feature only for deterministic deadline tests.
+- Clarified custom OpenBao CA support: the bundle replaces system roots and
+  currently requires a process restart after changes.
+
 ## [2026-11-01] fix | listen dual-stack (IPv4 + IPv6)
 
 - The maintainer found the server only listened on IPv4: the defaults (and

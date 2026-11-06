@@ -46,7 +46,10 @@ keys, the audit log and revocation.
   restart.
 - OpenBao is reached over HTTPS with its own (possibly private) CA, and the
   server logs in with the Kubernetes auth method using its projected
-  service-account token.
+  service-account token. Plain HTTP is also supported and emits a prominent
+  security warning at startup: credentials and key material travel unencrypted.
+  HTTP redirects are refused for both authentication and transit calls; point
+  the address at an endpoint that serves the requests directly.
 - Health and metrics on a separate plain-HTTP port: `/healthz` (process up),
   `/readyz` (holds an OpenBao token), `/metrics` (Prometheus).
 
@@ -89,7 +92,7 @@ are errors.
 | `server.reload_interval_secs` | `30` | how often cert and allowlist are checked |
 | `health.listen` | `[::]:8080` | plain HTTP: `/healthz`, `/readyz`, `/metrics` (same dual-stack rule) |
 | `openbao.address` | (required) | e.g. `https://openbao.openbao.svc:8200` |
-| `openbao.ca_cert` | system bundle | PEM CA bundle trusted *instead of* the system roots |
+| `openbao.ca_cert` | system bundle | PEM CA bundle trusted *instead of* the system roots; loaded at startup, restart after changes |
 | `openbao.transit_mount` | `transit` | |
 | `openbao.key_template` | `talos-kms-{uuid}` | transit key name per node |
 | `openbao.associated_data` | `true` | bind blobs to the node UUID |
@@ -118,6 +121,16 @@ non-Kubernetes setups.
 needs neither the TLS files nor OpenBao.
 
 Logs are JSON on stderr; `RUST_LOG` sets the level (default `info`).
+
+Connections and requests have fixed resource limits. The gRPC listener admits
+64 connections, including at most 16 concurrent TLS handshakes. TLS negotiation
+and the HTTP/2 client preface each have a 10 s deadline; established connections
+close after 30 s without peer input or 5 min total. Each connection allows four
+concurrent RPCs, with 32 active transit operations across the server. RPCs have
+a 10 s deadline, an 8 KiB header limit and a 4160-byte protobuf decoding limit
+(4096-byte data plus UUID and framing). Excess active requests return
+`RESOURCE_EXHAUSTED`; excess connections are closed. Health/metrics have a
+separate 16-connection limit, 10 s idle timeout and 60 s lifetime.
 
 ### Failure behaviour
 

@@ -46,7 +46,7 @@ axum = { version = "0.8.9", default-features = false, features = ["tokio", "http
 base64 = "0.23.1"
 rcgen = "0.14.10"
 tempfile = "3.27.0"
-tokio = { version = "1.54.1", features = ["process", "io-util"] }
+tokio = { version = "1.54.1", features = ["process", "io-util", "test-util"] }
 tonic = { version = "0.14.9", features = ["tls-ring"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }
