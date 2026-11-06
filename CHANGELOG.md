@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.2.1...v0.3.0) (2026-11-06)
+
+
+### Features
+
+* reload OpenBao CA bundles without restart ([#16](https://github.com/backend-bunny/talos-nyckelpiga/issues/16)) ([af6f0b6](https://github.com/backend-bunny/talos-nyckelpiga/commit/af6f0b664c29d2efd6fe1457e0234e246a48baf1))
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#11](https://github.com/backend-bunny/talos-nyckelpiga/issues/11)) ([2dec717](https://github.com/backend-bunny/talos-nyckelpiga/commit/2dec717528b88328545b983a27db2f5665ec2d2c))
+* **deps:** update rust crate toml to v1.2.0 ([#13](https://github.com/backend-bunny/talos-nyckelpiga/issues/13)) ([3505994](https://github.com/backend-bunny/talos-nyckelpiga/commit/3505994c1009ac01f5f0cc526b82468c94e3ab4c))
+* **deps:** update rust crate toml to v1.2.1 ([#17](https://github.com/backend-bunny/talos-nyckelpiga/issues/17)) ([ade143f](https://github.com/backend-bunny/talos-nyckelpiga/commit/ade143f704fe861ae32a92b81cb7105e30a3abad))
+* harden KMS transport and secret handling ([#15](https://github.com/backend-bunny/talos-nyckelpiga/issues/15)) ([bf3ba16](https://github.com/backend-bunny/talos-nyckelpiga/commit/bf3ba163e92144fd1b8dfe367d59ba0543810396))
+
 ## [0.2.1](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.2.0...v0.2.1) (2026-11-01)
 
 
