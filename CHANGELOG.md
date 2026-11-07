@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.0...v0.3.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate uuid to v1.29.1 ([#18](https://github.com/backend-bunny/talos-nyckelpiga/issues/18)) ([fa06ad7](https://github.com/backend-bunny/talos-nyckelpiga/commit/fa06ad7504bc4ac0f475c918e611bcb98ae9a6be))
+
 ## [0.3.0](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.2.1...v0.3.0) (2026-11-06)
 
 
