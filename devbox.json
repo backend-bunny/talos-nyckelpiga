@@ -1,10 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.18.4/.schema/devbox.schema.json",
   "packages": [
-    "rustc@1.99.0",
-    "cargo@1.99.0",
-    "clippy@1.99.0",
-    "rustfmt@1.99.0",
+    "rustc@1.99.1",
+    "cargo@1.99.1",
+    "clippy@1.99.1",
+    "rustfmt@1.99.1",
     "gcc@16.2.0",
     "protobuf@36.2",
     "openbao@2.7.2",
@@ -15,8 +15,8 @@
     "apko@1.2.37",
     "cosign@3.1.3",
     "go-task@3.53.1",
-    "bubblewrap@0.12.0",
-    "python3@3.14.8",
+    "bubblewrap@0.13.1",
+    "python3@3.14.10",
     "jq@1.8.2"
   ]
 }
