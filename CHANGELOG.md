@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.2](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.1...v0.3.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#23](https://github.com/backend-bunny/talos-nyckelpiga/issues/23)) ([ab488bc](https://github.com/backend-bunny/talos-nyckelpiga/commit/ab488bc6247f3100cbdb6f1e428fa3248aa9571a))
+* **deps:** update build toolchain ([#27](https://github.com/backend-bunny/talos-nyckelpiga/issues/27)) ([287bfef](https://github.com/backend-bunny/talos-nyckelpiga/commit/287bfef1c554331db046e536c9e83f5c8294232a))
+* **deps:** update rust crate arc-swap to v1.9.5 ([#25](https://github.com/backend-bunny/talos-nyckelpiga/issues/25)) ([ce89c5c](https://github.com/backend-bunny/talos-nyckelpiga/commit/ce89c5c3e307a84864976023d8459280fc35436a))
+* **deps:** update rust crate prost to v0.14.5 ([#26](https://github.com/backend-bunny/talos-nyckelpiga/issues/26)) ([ec99e79](https://github.com/backend-bunny/talos-nyckelpiga/commit/ec99e790a556f933a2c5eade702eee4a96ed2e85))
+* **deps:** update rust crate prost to v0.14.6 ([#28](https://github.com/backend-bunny/talos-nyckelpiga/issues/28)) ([73c56ce](https://github.com/backend-bunny/talos-nyckelpiga/commit/73c56ce7bca20733d958f7759641ce122a719e2b))
+* **deps:** update rust crate uuid to v1.29.2 ([#22](https://github.com/backend-bunny/talos-nyckelpiga/issues/22)) ([42d0494](https://github.com/backend-bunny/talos-nyckelpiga/commit/42d0494b04114b0c376ed3ac12c3eefdc92cc844))
+
 ## [0.3.1](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.0...v0.3.1) (2026-11-07)
 
 
