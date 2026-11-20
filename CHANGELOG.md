@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.3](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.2...v0.3.3) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#29](https://github.com/backend-bunny/talos-nyckelpiga/issues/29)) ([398b997](https://github.com/backend-bunny/talos-nyckelpiga/commit/398b99726771fc98b3b5486497714ca297a8270b))
+* **deps:** update dependency kubernetes-helm to v4.3.2 ([#32](https://github.com/backend-bunny/talos-nyckelpiga/issues/32)) ([b887d02](https://github.com/backend-bunny/talos-nyckelpiga/commit/b887d02c667a356cb20e21fbb2ae2a6cf32075ef))
+* **deps:** update rust crate clap to v4.6.9 ([#34](https://github.com/backend-bunny/talos-nyckelpiga/issues/34)) ([f2fe7ee](https://github.com/backend-bunny/talos-nyckelpiga/commit/f2fe7eeb2e8290ebce6ca4be6ca972c8e51a6e2f))
+* **deps:** update rust crates ([#31](https://github.com/backend-bunny/talos-nyckelpiga/issues/31)) ([525ad5b](https://github.com/backend-bunny/talos-nyckelpiga/commit/525ad5b737dc86ce840ae8a4150503412cde6daf))
+
 ## [0.3.2](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.1...v0.3.2) (2026-11-13)
 
 
