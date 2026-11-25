@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.3](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.2...v0.3.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** lock file maintenance ([#29](https://github.com/backend-bunny/talos-nyckelpiga/issues/29)) ([398b997](https://github.com/backend-bunny/talos-nyckelpiga/commit/398b99726771fc98b3b5486497714ca297a8270b))
+* **deps:** lock file maintenance ([#30](https://github.com/backend-bunny/talos-nyckelpiga/issues/30)) ([99ba4e0](https://github.com/backend-bunny/talos-nyckelpiga/commit/99ba4e00f82bacf592cc91d0db8005e58c16cad4))
+* **deps:** lock file maintenance ([#37](https://github.com/backend-bunny/talos-nyckelpiga/issues/37)) ([f3a0e0c](https://github.com/backend-bunny/talos-nyckelpiga/commit/f3a0e0cad2649864d01862ca45480e0fd0b1fe2b))
+* **deps:** update dependency kubernetes-helm to v4.3.2 ([#32](https://github.com/backend-bunny/talos-nyckelpiga/issues/32)) ([b887d02](https://github.com/backend-bunny/talos-nyckelpiga/commit/b887d02c667a356cb20e21fbb2ae2a6cf32075ef))
+* **deps:** update dependency openbao to v2.7.3 ([#36](https://github.com/backend-bunny/talos-nyckelpiga/issues/36)) ([132af43](https://github.com/backend-bunny/talos-nyckelpiga/commit/132af43c4793ff86b95dd5e2b1ffb7e49817839b))
+* **deps:** update rust crate clap to v4.6.9 ([#34](https://github.com/backend-bunny/talos-nyckelpiga/issues/34)) ([f2fe7ee](https://github.com/backend-bunny/talos-nyckelpiga/commit/f2fe7eeb2e8290ebce6ca4be6ca972c8e51a6e2f))
+* **deps:** update rust crates ([#31](https://github.com/backend-bunny/talos-nyckelpiga/issues/31)) ([525ad5b](https://github.com/backend-bunny/talos-nyckelpiga/commit/525ad5b737dc86ce840ae8a4150503412cde6daf))
+* **deps:** update rust crates ([#35](https://github.com/backend-bunny/talos-nyckelpiga/issues/35)) ([34fe6a4](https://github.com/backend-bunny/talos-nyckelpiga/commit/34fe6a4ff34e7cf1bf292d2ec3dfa85c9fcd224d))
+
 ## [0.3.2](https://github.com/backend-bunny/talos-nyckelpiga/compare/v0.3.1...v0.3.2) (2026-11-13)
 
 
